@@ -1,95 +1,175 @@
-import sql from '../db/index.js';
+const { query } = require('../config/database');
 
-// Obtener todos los usuarios
-export const getUsers = async (req, res) => {
-    try {
-        const users = await sql`SELECT * FROM "User"`;
-        res.json(users);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-};
+class UserController {
+    // Obtener todos los usuarios (SOLO PARA PRUEBAS)
+    static getUsers = async (req, res) => {
+        try {
+            console.log('📡 Ejecutando consulta para obtener usuarios...');
 
-// Crear un usuario
+            // Consulta simple para probar la conexión
+            const result = await query('SELECT * FROM usuarios LIMIT 10');
 
-export const createUser = async (req, res) => {
-    try {
-        const { name, email, password, phoneNumber, avatarUrl, isActive, roleId } = req.body;
+            console.log(`✅ Usuarios encontrados: ${result.rows.length}`);
 
-        // Validar campos requeridos (por ejemplo, name y email)
-        if (!name || !email) {
-            return res.status(400).json({ error: 'El nombre y el email son obligatorios' });
+            res.status(200).json({
+                success: true,
+                count: result.rows.length,
+                data: result.rows
+            });
+
+        } catch (error) {
+            console.error('❌ Error en getUsers:', error.message);
+            res.status(500).json({
+                success: false,
+                error: error.message,
+                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
         }
+    };
 
-        const [newUser] = await sql`
-            INSERT INTO "User" (name, email, password, "phoneNumber", "avatarUrl", "isActive", "roleId")
-            VALUES (${name}, ${email}, ${password}, ${phoneNumber}, ${avatarUrl}, ${isActive}, ${roleId})
-            RETURNING *
-        `;
+    // Obtener usuario por ID
+    static getUserById = async (req, res) => {
+        try {
+            const { id } = req.params;
 
-        // Si no se devuelve un usuario, indicar error
-        if (!newUser) {
-            return res.status(500).json({ error: 'No se pudo crear el usuario' });
+            console.log(`📡 Buscando usuario ID: ${id}`);
+
+            const result = await query(
+                'SELECT * FROM usuarios WHERE usuario_id = $1',
+                [id]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Usuario no encontrado'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('❌ Error en getUserById:', error.message);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
         }
+    };
 
-        res.status(201).json(newUser);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-};
+    // Crear usuario simple (sin validaciones complejas)
+    static createUser = async (req, res) => {
+        try {
+            const { email, nombre, apellido } = req.body;
 
+            console.log('📡 Creando usuario:', { email, nombre, apellido });
 
-// Obtener un usuario por ID
-export const getUserById = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [user] = await sql`SELECT * FROM "User" WHERE id = ${id}`;
-        if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-        res.json(user);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-};
+            if (!email || !nombre) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email y nombre son requeridos'
+                });
+            }
 
-// Actualizar un usuario
-export const updateUser = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name, email, password, phoneNumber, avatarUrl, isActive, roleId } = req.body;
+            const result = await query(
+                `INSERT INTO usuarios (email, tipo_usuario, activo) 
+         VALUES ($1, 'Cliente', true) 
+         RETURNING usuario_id, email, tipo_usuario, fecha_creacion`,
+                [email]
+            );
 
-        const [updatedUser] = await sql`
-      UPDATE "User"
-      SET 
-        name = ${name}, 
-        email = ${email},
-        password = ${password},
-        "phoneNumber" = ${phoneNumber},
-        "avatarUrl" = ${avatarUrl},
-        "isActive" = ${isActive},
-        "roleId" = ${roleId},
-        "updatedAt" = NOW()
-      WHERE id = ${id}
-      RETURNING *
-    `;
-        if (!updatedUser) return res.status(404).json({ error: 'Usuario no encontrado' });
-        res.json(updatedUser);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-};
+            console.log('✅ Usuario creado ID:', result.rows[0].usuario_id);
 
-// Eliminar un usuario
-export const deleteUser = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [deletedUser] = await sql`
-      DELETE FROM "User"
-      WHERE id = ${id}
-      RETURNING *
-    `;
-        if (!deletedUser) return res.status(404).json({ error: 'Usuario no encontrado' });
-        res.json({ message: 'Usuario eliminado', user: deletedUser });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-};
+            res.status(201).json({
+                success: true,
+                message: 'Usuario creado exitosamente',
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('❌ Error en createUser:', error.message);
+
+            // Error de duplicado
+            if (error.code === '23505') {
+                return res.status(409).json({
+                    success: false,
+                    message: 'El email ya está registrado'
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
+    };
+
+    // Endpoint de prueba de conexión a DB
+    static testDB = async (req, res) => {
+        try {
+            console.log('🧪 Probando conexión a PostgreSQL...');
+
+            // Probar conexión básica
+            const testQuery = await query('SELECT NOW() as server_time, version() as db_version');
+
+            // Verificar algunas tablas existentes
+            const tablesQuery = await query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public'
+        ORDER BY table_name
+      `);
+
+            res.json({
+                success: true,
+                message: '✅ Conexión a PostgreSQL exitosa',
+                data: {
+                    server_time: testQuery.rows[0].server_time,
+                    db_version: testQuery.rows[0].db_version,
+                    tables: tablesQuery.rows.map(t => t.table_name),
+                    tables_count: tablesQuery.rows.length
+                }
+            });
+
+        } catch (error) {
+            console.error('❌ Error de conexión a DB:', error.message);
+            res.status(500).json({
+                success: false,
+                message: '❌ Error de conexión a PostgreSQL',
+                error: error.message,
+                details: 'Verifica que la base de datos esté corriendo y las credenciales sean correctas'
+            });
+        }
+    };
+
+    // Contar usuarios
+    static countUsers = async (req, res) => {
+        try {
+            const result = await query(`
+        SELECT 
+          COUNT(*) as total_usuarios,
+          COUNT(CASE WHEN tipo_usuario = 'Empleado' THEN 1 END) as empleados,
+          COUNT(CASE WHEN tipo_usuario = 'Cliente' THEN 1 END) as clientes,
+          COUNT(CASE WHEN activo = true THEN 1 END) as activos
+        FROM usuarios
+      `);
+
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('❌ Error en countUsers:', error.message);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
+    };
+}
+
+module.exports = UserController;

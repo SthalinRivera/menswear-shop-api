@@ -1,18 +1,14 @@
-import express from 'express';
-import {
-    getUsers,
-    createUser,
-    getUserById,
-    updateUser,
-    deleteUser
-} from '../controllers/userController.js';
-
+const express = require('express');
 const router = express.Router();
+const UserController = require('../controllers/userController');
 
-router.get('/', getUsers);           // GET /users
-router.get('/:id', getUserById);     // GET /users/:id
-router.post('/', createUser);        // POST /users
-router.put('/:id', updateUser);      // PUT /users/:id
-router.delete('/:id', deleteUser);   // DELETE /users/:id
+// RUTAS PÚBLICAS PARA PRUEBAS
+router.get('/test-db', UserController.testDB);
+router.get('/count', UserController.countUsers);
 
-export default router;
+// RUTAS BÁSICAS DE USUARIOS
+router.get('/', UserController.getUsers);
+router.get('/:id', UserController.getUserById);
+router.post('/', UserController.createUser);
+
+module.exports = router;
