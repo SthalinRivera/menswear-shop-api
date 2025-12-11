@@ -55,7 +55,14 @@ app.use(morgan("combined", { stream: logger.stream }));
 app.use(`/api/${API_VERSION}`, limiter);
 
 app.use(passport.initialize());
-
+// Ruta raíz - landing page o mensaje de bienvenida
+app.get("/", (req, res) => {
+    res.json({
+        success: true,
+        message: "Bienvenido a la API de Moda Express!",
+        info: "Usa /api/v1 para acceder a los endpoints. Por ejemplo: /api/v1/auth/login"
+    });
+});
 // Health check
 app.get("/health", (req, res) => {
     res.json({
