@@ -13,18 +13,22 @@ class AuthController {
     static login = async (req, res, next) => {
         try {
             const { email, password } = req.body;
+            console.log("🔹 Login iniciado para email:", email);
 
             const result = await query(
                 `SELECT u.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
-                e.nombre as empleado_nombre, e.apellido as empleado_apellido, e.puesto
-         FROM usuarios u
-         LEFT JOIN clientes c ON u.cliente_id = c.cliente_id
-         LEFT JOIN empleados e ON u.empleado_id = e.empleado_id
-         WHERE u.email = $1 AND u.activo = true`,
+             e.nombre as empleado_nombre, e.apellido as empleado_apellido, e.puesto
+             FROM usuarios u
+             LEFT JOIN clientes c ON u.cliente_id = c.cliente_id
+             LEFT JOIN empleados e ON u.empleado_id = e.empleado_id
+             WHERE u.email = $1 AND u.activo = true`,
                 [email]
             );
 
+            console.log("🔹 Resultados de usuario:", result.rows);
+
             if (result.rows.length === 0) {
+                console.log("⚠️ Usuario no encontrado o inactivo");
                 return res.status(401).json({
                     success: false,
                     message: 'Credenciales inválidas'
@@ -32,9 +36,13 @@ class AuthController {
             }
 
             const user = result.rows[0];
+            console.log("🔹 Usuario encontrado:", user);
 
             const isValidPassword = bcrypt.compareSync(password, user.contrasena_hash);
+            console.log("🔹 Contraseña válida:", isValidPassword);
+
             if (!isValidPassword) {
+                console.log("⚠️ Contraseña incorrecta, aumentando intentos fallidos");
                 await query(
                     'UPDATE usuarios SET intentos_fallidos = intentos_fallidos + 1 WHERE usuario_id = $1',
                     [user.usuario_id]
@@ -47,12 +55,14 @@ class AuthController {
             }
 
             if (user.bloqueado_hasta && new Date(user.bloqueado_hasta) > new Date()) {
+                console.log("⚠️ Cuenta bloqueada hasta:", user.bloqueado_hasta);
                 return res.status(403).json({
                     success: false,
                     message: 'Cuenta bloqueada temporalmente'
                 });
             }
 
+            console.log("🔹 Restableciendo intentos fallidos y actualizando fecha de login");
             await query(
                 'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL, fecha_ultimo_login = NOW() WHERE usuario_id = $1',
                 [user.usuario_id]
@@ -60,21 +70,25 @@ class AuthController {
 
             const rolesResult = await query(
                 `SELECT r.nombre, r.nivel
-         FROM usuarios_roles ur
-         JOIN roles r ON ur.rol_id = r.rol_id
-         WHERE ur.usuario_id = $1 AND ur.activo = true`,
+             FROM usuarios_roles ur
+             JOIN roles r ON ur.rol_id = r.rol_id
+             WHERE ur.usuario_id = $1 AND ur.activo = true`,
                 [user.usuario_id]
             );
 
+            console.log("🔹 Roles encontrados:", rolesResult.rows);
             user.roles = rolesResult.rows;
 
+            console.log("🔹 Generando tokens...");
             const tokens = await generateTokens(user, req.ip);
+            console.log("🔹 Tokens generados:", tokens);
 
             await query(
                 `INSERT INTO logs_autenticacion (usuario_id, email_proporcionado, accion, exito, ip_address, user_agent)
-         VALUES ($1, $2, 'Login', true, $3, $4)`,
+             VALUES ($1, $2, 'Login', true, $3, $4)`,
                 [user.usuario_id, email, req.ip, req.headers['user-agent']]
             );
+            console.log("🔹 Log de autenticación insertado");
 
             res.json({
                 success: true,
@@ -93,6 +107,7 @@ class AuthController {
             });
 
         } catch (error) {
+            console.error("💥 Error en login:", error);
             next(error);
         }
     };
