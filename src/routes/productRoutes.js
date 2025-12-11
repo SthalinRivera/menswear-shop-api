@@ -1,10 +1,12 @@
-const express = require('express');
-const { body } = require('express-validator');
-const router = express.Router();
-const ProductController = require('../controllers/productController');
-const { authenticateJWT, checkPermission } = require('../middlewares/authMiddleware');
-const { validate, validationSchemas } = require('../middlewares/validationMiddleware');
+import express from "express";
+import { body } from "express-validator";
 
+import ProductController from "../controllers/productController.js";
+import { authenticateJWT, checkPermission } from "../middlewares/authMiddleware.js";
+import { validate, validationSchemas } from "../middlewares/validationMiddleware.js";
+
+
+const router = express.Router();
 // Rutas públicas (solo lectura)
 router.get('/',
     validate(validationSchemas.pagination.concat(validationSchemas.search)),
@@ -73,4 +75,4 @@ router.get('/stats/overview',
     ProductController.getProductStats
 );
 
-module.exports = router;
+export default router;

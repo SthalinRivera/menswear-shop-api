@@ -1,14 +1,13 @@
-const passport = require('passport');
-const jwt = require('jsonwebtoken');
-const { query } = require('../config/database');
-const { JWT_SECRET, ERROR_MESSAGES } = require('../config/constants');
+// src/middlewares/authMiddleware.js
+import passport from 'passport';
+import jwt from 'jsonwebtoken';
+import { query } from '../config/database.js';
+import { JWT_SECRET, ERROR_MESSAGES } from '../config/constants.js';
 
 // Middleware para autenticación JWT
-const authenticateJWT = (req, res, next) => {
+export const authenticateJWT = (req, res, next) => {
     passport.authenticate('jwt', { session: false }, (err, user, info) => {
-        if (err) {
-            return next(err);
-        }
+        if (err) return next(err);
 
         if (!user) {
             return res.status(401).json({
@@ -24,11 +23,10 @@ const authenticateJWT = (req, res, next) => {
 };
 
 // Middleware para verificar permisos
-const checkPermission = (permisoCodigo) => {
+export const checkPermission = (permisoCodigo) => {
     return async (req, res, next) => {
         try {
             const user = req.user;
-
             if (!user) {
                 return res.status(401).json({
                     success: false,
@@ -36,15 +34,10 @@ const checkPermission = (permisoCodigo) => {
                 });
             }
 
-            // Verificar si es super admin (tiene todos los permisos)
             const isSuperAdmin = user.roles.some(role => role.nombre === 'Super Administrador');
-            if (isSuperAdmin) {
-                return next();
-            }
+            if (isSuperAdmin) return next();
 
-            // Verificar permiso específico
             const hasPermission = user.permisos.some(permiso => permiso.codigo === permisoCodigo);
-
             if (!hasPermission) {
                 return res.status(403).json({
                     success: false,
@@ -61,11 +54,10 @@ const checkPermission = (permisoCodigo) => {
 };
 
 // Middleware para verificar rol
-const checkRole = (...roles) => {
+export const checkRole = (...roles) => {
     return (req, res, next) => {
         try {
             const user = req.user;
-
             if (!user) {
                 return res.status(401).json({
                     success: false,
@@ -74,7 +66,6 @@ const checkRole = (...roles) => {
             }
 
             const hasRole = user.roles.some(role => roles.includes(role.nombre));
-
             if (!hasRole) {
                 return res.status(403).json({
                     success: false,
@@ -91,7 +82,7 @@ const checkRole = (...roles) => {
 };
 
 // Middleware para generar tokens
-const generateTokens = async (user) => {
+export const generateTokens = async (user, ip = '127.0.0.1') => {
     const tokenPayload = {
         usuario_id: user.usuario_id,
         email: user.email,
@@ -112,15 +103,8 @@ const generateTokens = async (user) => {
     // Guardar refresh token en la base de datos
     await query(
         'INSERT INTO sesiones (usuario_id, token_sesion, token_refresh, ip_address, fecha_expiracion) VALUES ($1, $2, $3, $4, NOW() + INTERVAL \'7 days\')',
-        [user.usuario_id, accessToken, refreshToken, req.ip || '127.0.0.1']
+        [user.usuario_id, accessToken, refreshToken, ip]
     );
 
     return { accessToken, refreshToken };
-};
-
-module.exports = {
-    authenticateJWT,
-    checkPermission,
-    checkRole,
-    generateTokens
 };

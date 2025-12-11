@@ -1,5 +1,9 @@
-const { Pool } = require('pg');
-require('dotenv').config();
+// src/config/database.js
+import pkg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
+
+const { Pool } = pkg;
 
 // Si hay DATABASE_URL → usarla (Neon/Supabase)
 // Si no → usar config local
@@ -38,13 +42,13 @@ pool.on('error', (err) => {
 });
 
 // Función para ejecutar queries
-const query = (text, params = []) => pool.query(text, params);
+export const query = (text, params = []) => pool.query(text, params);
 
 // Función para obtener un cliente del pool
-const getClient = () => pool.connect();
+export const getClient = () => pool.connect();
 
 // Función para probar conexión
-const testConnection = async () => {
+export const testConnection = async () => {
     try {
         const res = await query('SELECT NOW()');
         console.log('🟢 PostgreSQL conectado:', res.rows[0].now);
@@ -55,11 +59,5 @@ const testConnection = async () => {
     }
 };
 
-// Exportar
-module.exports = {
-    query,
-    getClient,
-    pool,
-    testConnection,
-};
-
+// Exportar el pool si es necesario
+export default pool;

@@ -1,7 +1,8 @@
-const { query, getClient } = require('../config/database');
-const { validationSchemas, validate } = require('../middlewares/validationMiddleware');
-const { asyncHandler } = require('../middlewares/errorMiddleware');
-const { PAGINATION } = require('../config/constants');
+import { query, getClient } from '../config/database.js';
+import { validationSchemas, validate } from '../middlewares/validationMiddleware.js';
+import { asyncHandler } from '../middlewares/errorMiddleware.js';
+import { PAGINATION } from '../config/constants.js';
+
 
 class ProductController {
     // Obtener todos los productos con filtros
@@ -882,4 +883,4 @@ class ProductController {
     });
 }
 
-module.exports = ProductController;
+export default ProductController;

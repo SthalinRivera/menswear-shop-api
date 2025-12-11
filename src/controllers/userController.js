@@ -1,14 +1,12 @@
-const { query } = require('../config/database');
+// src/controllers/userController.js
+import { query } from '../config/database.js';
 
 class UserController {
     // Obtener todos los usuarios (SOLO PARA PRUEBAS)
     static getUsers = async (req, res) => {
         try {
             console.log('📡 Ejecutando consulta para obtener usuarios...');
-
-            // Consulta simple para probar la conexión
             const result = await query('SELECT * FROM usuarios LIMIT 10');
-
             console.log(`✅ Usuarios encontrados: ${result.rows.length}`);
 
             res.status(200).json({
@@ -16,7 +14,6 @@ class UserController {
                 count: result.rows.length,
                 data: result.rows
             });
-
         } catch (error) {
             console.error('❌ Error en getUsers:', error.message);
             res.status(500).json({
@@ -31,13 +28,8 @@ class UserController {
     static getUserById = async (req, res) => {
         try {
             const { id } = req.params;
-
             console.log(`📡 Buscando usuario ID: ${id}`);
-
-            const result = await query(
-                'SELECT * FROM usuarios WHERE usuario_id = $1',
-                [id]
-            );
+            const result = await query('SELECT * FROM usuarios WHERE usuario_id = $1', [id]);
 
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -50,7 +42,6 @@ class UserController {
                 success: true,
                 data: result.rows[0]
             });
-
         } catch (error) {
             console.error('❌ Error en getUserById:', error.message);
             res.status(500).json({
@@ -60,11 +51,10 @@ class UserController {
         }
     };
 
-    // Crear usuario simple (sin validaciones complejas)
+    // Crear usuario simple
     static createUser = async (req, res) => {
         try {
             const { email, nombre, apellido } = req.body;
-
             console.log('📡 Creando usuario:', { email, nombre, apellido });
 
             if (!email || !nombre) {
@@ -76,8 +66,8 @@ class UserController {
 
             const result = await query(
                 `INSERT INTO usuarios (email, tipo_usuario, activo) 
-         VALUES ($1, 'Cliente', true) 
-         RETURNING usuario_id, email, tipo_usuario, fecha_creacion`,
+                 VALUES ($1, 'Cliente', true) 
+                 RETURNING usuario_id, email, tipo_usuario, fecha_creacion`,
                 [email]
             );
 
@@ -88,11 +78,9 @@ class UserController {
                 message: 'Usuario creado exitosamente',
                 data: result.rows[0]
             });
-
         } catch (error) {
             console.error('❌ Error en createUser:', error.message);
 
-            // Error de duplicado
             if (error.code === '23505') {
                 return res.status(409).json({
                     success: false,
@@ -111,17 +99,13 @@ class UserController {
     static testDB = async (req, res) => {
         try {
             console.log('🧪 Probando conexión a PostgreSQL...');
-
-            // Probar conexión básica
             const testQuery = await query('SELECT NOW() as server_time, version() as db_version');
-
-            // Verificar algunas tablas existentes
             const tablesQuery = await query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public'
-        ORDER BY table_name
-      `);
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public'
+                ORDER BY table_name
+            `);
 
             res.json({
                 success: true,
@@ -133,7 +117,6 @@ class UserController {
                     tables_count: tablesQuery.rows.length
                 }
             });
-
         } catch (error) {
             console.error('❌ Error de conexión a DB:', error.message);
             res.status(500).json({
@@ -149,19 +132,18 @@ class UserController {
     static countUsers = async (req, res) => {
         try {
             const result = await query(`
-        SELECT 
-          COUNT(*) as total_usuarios,
-          COUNT(CASE WHEN tipo_usuario = 'Empleado' THEN 1 END) as empleados,
-          COUNT(CASE WHEN tipo_usuario = 'Cliente' THEN 1 END) as clientes,
-          COUNT(CASE WHEN activo = true THEN 1 END) as activos
-        FROM usuarios
-      `);
+                SELECT 
+                  COUNT(*) as total_usuarios,
+                  COUNT(CASE WHEN tipo_usuario = 'Empleado' THEN 1 END) as empleados,
+                  COUNT(CASE WHEN tipo_usuario = 'Cliente' THEN 1 END) as clientes,
+                  COUNT(CASE WHEN activo = true THEN 1 END) as activos
+                FROM usuarios
+            `);
 
             res.json({
                 success: true,
                 data: result.rows[0]
             });
-
         } catch (error) {
             console.error('❌ Error en countUsers:', error.message);
             res.status(500).json({
@@ -172,4 +154,4 @@ class UserController {
     };
 }
 
-module.exports = UserController;
+export default UserController;

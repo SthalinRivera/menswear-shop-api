@@ -1,11 +1,12 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const passport = require('passport');
-const { query } = require('../config/database');
-const { generateTokens } = require('../middlewares/authMiddleware');
-const { validationSchemas } = require('../middlewares/validationMiddleware');
-const logger = require('../utils/logger');
-const { ERROR_MESSAGES } = require('../config/constants');
+// src/controllers/authController.js
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import passport from 'passport';
+import { query, getClient } from '../config/database.js';
+import { generateTokens } from '../middlewares/authMiddleware.js';
+import { validationSchemas } from '../middlewares/validationMiddleware.js';
+import logger from '../utils/logger.js';
+import { ERROR_MESSAGES } from '../config/constants.js';
 
 class AuthController {
     // Login tradicional
@@ -13,7 +14,6 @@ class AuthController {
         try {
             const { email, password } = req.body;
 
-            // Buscar usuario
             const result = await query(
                 `SELECT u.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
                 e.nombre as empleado_nombre, e.apellido as empleado_apellido, e.puesto
@@ -23,7 +23,7 @@ class AuthController {
          WHERE u.email = $1 AND u.activo = true`,
                 [email]
             );
-            
+
             if (result.rows.length === 0) {
                 return res.status(401).json({
                     success: false,
@@ -33,10 +33,8 @@ class AuthController {
 
             const user = result.rows[0];
 
-            // Verificar contraseña
             const isValidPassword = bcrypt.compareSync(password, user.contrasena_hash);
             if (!isValidPassword) {
-                // Registrar intento fallido
                 await query(
                     'UPDATE usuarios SET intentos_fallidos = intentos_fallidos + 1 WHERE usuario_id = $1',
                     [user.usuario_id]
@@ -48,7 +46,6 @@ class AuthController {
                 });
             }
 
-            // Verificar si la cuenta está bloqueada
             if (user.bloqueado_hasta && new Date(user.bloqueado_hasta) > new Date()) {
                 return res.status(403).json({
                     success: false,
@@ -56,13 +53,11 @@ class AuthController {
                 });
             }
 
-            // Reiniciar intentos fallidos
             await query(
                 'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL, fecha_ultimo_login = NOW() WHERE usuario_id = $1',
                 [user.usuario_id]
             );
 
-            // Obtener roles
             const rolesResult = await query(
                 `SELECT r.nombre, r.nivel
          FROM usuarios_roles ur
@@ -73,10 +68,8 @@ class AuthController {
 
             user.roles = rolesResult.rows;
 
-            // Generar tokens
             const tokens = await generateTokens(user, req.ip);
 
-            // Registrar login exitoso
             await query(
                 `INSERT INTO logs_autenticacion (usuario_id, email_proporcionado, accion, exito, ip_address, user_agent)
          VALUES ($1, $2, 'Login', true, $3, $4)`,
@@ -560,4 +553,4 @@ class AuthController {
     };
 }
 
-module.exports = AuthController;
+export default AuthController;

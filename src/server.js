@@ -1,67 +1,68 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
-const passport = require('./config/passport');
-const { errorHandler, notFoundHandler } = require('./middlewares/errorMiddleware');
-const { testConnection } = require('./config/database');
-const logger = require('./utils/logger');
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import rateLimit from "express-rate-limit";
+import dotenv from "dotenv";
 
-// Importar rutas
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
-const productRoutes = require('./routes/productRoutes');
-const categoryRoutes = require('./routes/categoryRoutes');
-const brandRoutes = require('./routes/brandRoutes');
-const inventoryRoutes = require('./routes/inventoryRoutes');
-const saleRoutes = require('./routes/saleRoutes');
-const customerRoutes = require('./routes/customerRoutes');
-const supplierRoutes = require('./routes/supplierRoutes');
-const purchaseRoutes = require('./routes/purchaseRoutes');
-const warehouseRoutes = require('./routes/warehouseRoutes');
-const promotionRoutes = require('./routes/promotionRoutes');
-const reportRoutes = require('./routes/reportRoutes');
+import passport from "./config/passport.js";
+import { errorHandler, notFoundHandler } from "./middlewares/errorMiddleware.js";
+import { testConnection } from "./config/database.js";
+import logger from "./utils/logger.js";
 
-require('dotenv').config();
+// Rutas
+import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import productRoutes from "./routes/productRoutes.js";
+// import categoryRoutes from "./routes/categoryRoutes.js";
+// import brandRoutes from "./routes/brandRoutes.js";
+// import inventoryRoutes from "./routes/inventoryRoutes.js";
+// import saleRoutes from "./routes/saleRoutes.js";
+// import customerRoutes from "./routes/customerRoutes.js";
+// import supplierRoutes from "./routes/supplierRoutes.js";
+// import purchaseRoutes from "./routes/purchaseRoutes.js";
+// import warehouseRoutes from "./routes/warehouseRoutes.js";
+// import promotionRoutes from "./routes/promotionRoutes.js";
+// import reportRoutes from "./routes/reportRoutes.js";
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const API_VERSION = process.env.API_VERSION || 'v1';
+const API_VERSION = process.env.API_VERSION || "v1";
 
-// Configuración de rate limiting
+// Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100, // límite por IP
+    windowMs: 15 * 60 * 1000,
+    max: 100,
     message: {
         success: false,
-        message: 'Demasiadas solicitudes desde esta IP, por favor intente de nuevo en 15 minutos'
-    }
+        message: "Demasiadas solicitudes desde esta IP. Intenta de nuevo en 15 minutos.",
+    },
 });
 
 // Middlewares globales
 app.use(helmet());
-app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(morgan('combined', { stream: logger.stream }));
-
-// Rate limiting solo para API
+app.use(
+    cors({
+        origin: process.env.CORS_ORIGIN || "*",
+        credentials: true,
+    })
+);
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(morgan("combined", { stream: logger.stream }));
 app.use(`/api/${API_VERSION}`, limiter);
 
-// Inicializar passport
 app.use(passport.initialize());
 
 // Health check
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
     res.json({
-        status: 'ok',
+        status: "ok",
         timestamp: new Date().toISOString(),
-        service: 'tienda-api',
-        version: '1.0.0'
+        service: "tienda-api",
+        version: "1.0.0",
     });
 });
 
@@ -72,7 +73,7 @@ app.use(`/api/${API_VERSION}/products`, productRoutes);
 // app.use(`/api/${API_VERSION}/categories`, categoryRoutes);
 // app.use(`/api/${API_VERSION}/brands`, brandRoutes);
 // app.use(`/api/${API_VERSION}/inventory`, inventoryRoutes);
-app.use(`/api/${API_VERSION}/sales`, saleRoutes);
+// app.use(`/api/${API_VERSION}/sales`, saleRoutes);
 // app.use(`/api/${API_VERSION}/customers`, customerRoutes);
 // app.use(`/api/${API_VERSION}/suppliers`, supplierRoutes);
 // app.use(`/api/${API_VERSION}/purchases`, purchaseRoutes);
@@ -80,45 +81,44 @@ app.use(`/api/${API_VERSION}/sales`, saleRoutes);
 // app.use(`/api/${API_VERSION}/promotions`, promotionRoutes);
 // app.use(`/api/${API_VERSION}/reports`, reportRoutes);
 
-// Manejo de errores
+// Errores
 app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Iniciar servidor
 const startServer = async () => {
     try {
-        // Probar conexión a la base de datos
         const dbConnected = await testConnection();
         if (!dbConnected) {
-            logger.error('No se pudo conectar a la base de datos');
+            logger.error("❌ No se pudo conectar a la base de datos");
             process.exit(1);
         }
 
         app.listen(PORT, () => {
             logger.info(`🚀 Servidor iniciado en http://localhost:${PORT}`);
-            logger.info(`📚 Documentación API: http://localhost:${PORT}/api-docs`);
             logger.info(`🔗 API Base: http://localhost:${PORT}/api/${API_VERSION}`);
         });
     } catch (error) {
-        logger.error('Error al iniciar el servidor:', error);
+        logger.error("❌ Error al iniciar el servidor:", error);
         process.exit(1);
     }
 };
 
-// Manejo de señales de terminación
-process.on('SIGTERM', () => {
-    logger.info('SIGTERM recibido. Cerrando servidor...');
+// Señales del sistema
+process.on("SIGTERM", () => {
+    logger.info("SIGTERM recibido. Cerrando servidor...");
     process.exit(0);
 });
 
-process.on('SIGINT', () => {
-    logger.info('SIGINT recibido. Cerrando servidor...');
+process.on("SIGINT", () => {
+    logger.info("SIGINT recibido. Cerrando servidor...");
     process.exit(0);
 });
 
 // Iniciar
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== "test") {
     startServer();
 }
 
-module.exports = app; // Para testing
+// Correcto export en ESM
+export default app;

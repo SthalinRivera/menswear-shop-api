@@ -1,12 +1,17 @@
-const winston = require('winston');
-// const path = require('path'); // Ya no es necesario
-// const fs = require('fs'); // Ya no es necesario
+// src/config/logger.js
+import winston from 'winston';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-// ❌ ELIMINAMOS la creación del directorio de logs
-// const logDir = 'logs';
-// if (!fs.existsSync(logDir)) {
-//   fs.mkdirSync(logDir);
-// }
+// Para obtener __dirname en ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const logDir = path.join(__dirname, '../logs');
+if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir);
+}
 
 // Formato personalizado
 const customFormat = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
@@ -29,7 +34,7 @@ const logger = winston.createLogger({
         customFormat
     ),
     transports: [
-        // ✅ MANTENEMOS: Console transport (Los logs de consola son capturados por Vercel)
+        // Logs en consola
         new winston.transports.Console({
             format: winston.format.combine(
                 winston.format.colorize(),
@@ -37,29 +42,29 @@ const logger = winston.createLogger({
             )
         }),
 
-        // ❌ ELIMINAMOS: File transport para errores
-        // new winston.transports.File({
-        //   filename: path.join(logDir, 'error.log'),
-        //   level: 'error',
-        //   maxsize: 5242880, // 5MB
-        //   maxFiles: 5
-        // }),
+        // Logs de errores
+        new winston.transports.File({
+            filename: path.join(logDir, 'error.log'),
+            level: 'error',
+            maxsize: 5242880, // 5MB
+            maxFiles: 5
+        }),
 
-        // ❌ ELIMINAMOS: File transport para todos los logs
-        // new winston.transports.File({
-        //   filename: path.join(logDir, 'combined.log'),
-        //   maxsize: 5242880, // 5MB
-        //   maxFiles: 5
-        // }),
+        // Logs combinados
+        new winston.transports.File({
+            filename: path.join(logDir, 'combined.log'),
+            maxsize: 5242880,
+            maxFiles: 5
+        }),
 
-        // ❌ ELIMINAMOS: File transport para auditoría
-        // new winston.transports.File({
-        //   filename: path.join(logDir, 'audit.log'),
-        //   level: 'info',
-        //   format: winston.format.json(),
-        //   maxsize: 5242880,
-        //   maxFiles: 10
-        // })
+        // Logs de auditoría
+        new winston.transports.File({
+            filename: path.join(logDir, 'audit.log'),
+            level: 'info',
+            format: winston.format.json(),
+            maxsize: 5242880,
+            maxFiles: 10
+        })
     ]
 });
 
@@ -70,7 +75,7 @@ logger.stream = {
     }
 };
 
-// Métodos personalizados (Estos pueden quedarse igual)
+// Métodos personalizados
 logger.audit = (action, user, details) => {
     logger.info('AUDIT', {
         action,
@@ -80,14 +85,14 @@ logger.audit = (action, user, details) => {
     });
 };
 
-logger.api = (method, path, status, duration, user) => {
+logger.api = (method, pathReq, status, duration, user) => {
     logger.info('API', {
         method,
-        path,
+        path: pathReq,
         status,
         duration: `${duration}ms`,
         user: user?.usuario_id || 'anonymous'
     });
 };
 
-module.exports = logger;
+export default logger;

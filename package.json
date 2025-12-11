@@ -2,6 +2,7 @@
   "name": "tienda-api",
   "version": "1.0.0",
   "description": "API REST para sistema de tienda de ropa",
+  "type": "module", 
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

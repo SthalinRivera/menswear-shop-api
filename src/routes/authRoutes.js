@@ -1,10 +1,11 @@
-const express = require('express');
-const { body } = require('express-validator');
+// src/routes/authRoutes.js
+import express from 'express';
+import { body } from 'express-validator';
+import AuthController from '../controllers/authController.js';
+import { validate, validationSchemas } from '../middlewares/validationMiddleware.js';
+import { authenticateJWT } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
-const AuthController = require('../controllers/authController');
-const { validate, validationSchemas } = require('../middlewares/validationMiddleware');
-const { authenticateJWT } = require('../middlewares/authMiddleware');
 
 // Rutas públicas
 router.post('/login',
@@ -58,4 +59,4 @@ router.post('/logout',
     AuthController.logout
 );
 
-module.exports = router;
+export default router;
