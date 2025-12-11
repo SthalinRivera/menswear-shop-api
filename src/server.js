@@ -43,12 +43,27 @@ const limiter = rateLimit({
 
 // Middlewares globales
 app.use(helmet());
+app.use(express.json()) // para parsear JSON
+// Configuración de CORS
+const allowedOrigins = [
+    'http://localhost:3000',  // tu frontend en desarrollo
+    'http://localhost:5173',  // si tienes otro dev server
+    'https://tu-dominio-produccion.com' // producción
+]
+
 app.use(
     cors({
-        origin: process.env.CORS_ORIGIN || "*",
-        credentials: true,
+        origin: function (origin, callback) {
+            if (!origin) return callback(null, true) // Postman, curl, etc.
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true)
+            } else {
+                callback(new Error('Not allowed by CORS'))
+            }
+        },
+        credentials: true
     })
-);
+)
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(morgan("combined", { stream: logger.stream }));
