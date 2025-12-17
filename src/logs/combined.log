@@ -821,3 +821,18 @@
 2025-12-17 11:40:17 [info] : 🔗 API Base: http://localhost:4000/api/v1 
 2025-12-17 11:40:23 [info] : 🚀 Servidor iniciado en http://localhost:4000 
 2025-12-17 11:40:24 [info] : 🔗 API Base: http://localhost:4000/api/v1 
+2025-12-17 12:21:52 [info] : 🚀 Servidor iniciado en http://localhost:4000 
+2025-12-17 12:21:52 [info] : 🔗 API Base: http://localhost:4000/api/v1 
+2025-12-17 12:28:16 [info] : ::1 - - [17/Dec/2025:17:28:16 +0000] "GET /api/v1/auth/google HTTP/1.1" 302 0 "http://localhost:3000/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" 
+2025-12-17 12:28:24 [info] : ::1 - - [17/Dec/2025:17:28:24 +0000] "GET /api/v1/auth/google HTTP/1.1" 302 0 "http://localhost:3000/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" 
+2025-12-17 12:34:17 [info] : ::1 - - [17/Dec/2025:17:34:17 +0000] "GET /api/v1/auth/google HTTP/1.1" 302 0 "http://localhost:3000/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" 
+2025-12-17 12:34:24 [info] : ::1 - - [17/Dec/2025:17:34:24 +0000] "GET /api/v1/auth/google/callback?code=4%2F0ATX87lMJpV8hGBvYTpva-Vne1mhSQknDYQ_YesMOPOkJateEe2NncrFNVkC46HW3PenJKg&scope=email+profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+openid&authuser=0&prompt=none HTTP/1.1" 302 485 "https://accounts.google.com/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" 
+2025-12-17 12:44:32 [info] : 🚀 Servidor iniciado en http://localhost:4000 
+2025-12-17 12:44:32 [info] : 🔗 API Base: http://localhost:4000/api/v1 
+2025-12-17 12:44:45 [info] : 🚀 Servidor iniciado en http://localhost:4000 
+2025-12-17 12:44:45 [info] : 🔗 API Base: http://localhost:4000/api/v1 
+2025-12-17 12:44:48 [info] : 🚀 Servidor iniciado en http://localhost:4000 
+2025-12-17 12:44:48 [info] : 🔗 API Base: http://localhost:4000/api/v1 
+2025-12-17 12:44:52 [info] : 🚀 Servidor iniciado en http://localhost:4000 
+2025-12-17 12:44:52 [info] : 🔗 API Base: http://localhost:4000/api/v1 
+2025-12-17 12:45:26 [info] : SIGINT recibido. Cerrando servidor... 
