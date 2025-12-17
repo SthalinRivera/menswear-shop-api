@@ -1,10 +1,4 @@
-// const bcrypt = require('bcryptjs');
-// const jwt = require('jsonwebtoken');
-// const { query, getClient } = require('../config/database');
-// const { validationSchemas } = require('../middlewares/validationMiddleware');
-// const { asyncHandler } = require('../middlewares/errorMiddleware');
-// const { PAGINATION, ERROR_MESSAGES } = require('../config/constants');
-// const logger = require('../utils/logger');
+
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { query, getClient } from '../config/database.js';
@@ -30,47 +24,47 @@ class UserController {
         const offset = (page - 1) * limit;
 
         let queryStr = `
-      SELECT 
-        u.usuario_id,
-        u.email,
-        u.tipo_usuario,
-        u.provider,
-        u.email_verificado,
-        u.activo,
-        u.fecha_creacion,
-        u.fecha_ultimo_login,
-        u.cliente_id,
-        u.empleado_id,
-        c.nombre as cliente_nombre,
-        c.apellido as cliente_apellido,
-        c.telefono as cliente_telefono,
-        e.nombre as empleado_nombre,
-        e.apellido as empleado_apellido,
-        e.puesto as empleado_puesto,
-        s.nombre as sucursal_nombre,
-        STRING_AGG(DISTINCT r.nombre, ', ') as roles
-      FROM usuarios u
-      LEFT JOIN clientes c ON u.cliente_id = c.cliente_id
-      LEFT JOIN empleados e ON u.empleado_id = e.empleado_id
-      LEFT JOIN sucursales s ON e.sucursal_id = s.sucursal_id
-      LEFT JOIN usuarios_roles ur ON u.usuario_id = ur.usuario_id AND ur.activo = true
-      LEFT JOIN roles r ON ur.rol_id = r.rol_id
-      WHERE 1=1
+        SELECT 
+            u.usuario_id,
+            u.email,
+            u.tipo_usuario,
+            u.provider,
+            u.email_verificado,
+            u.activo,
+            u.fecha_creacion,
+            u.fecha_ultimo_login,
+            u.cliente_id,
+            u.empleado_id,
+            c.nombre as cliente_nombre,
+            c.apellido as cliente_apellido,
+            c.telefono as cliente_telefono,
+            e.nombre as empleado_nombre,
+            e.apellido as empleado_apellido,
+            e.puesto as empleado_puesto,
+            s.nombre as sucursal_nombre,
+            STRING_AGG(DISTINCT r.nombre, ', ') as roles
+        FROM usuarios u
+        LEFT JOIN clientes c ON u.cliente_id = c.cliente_id
+        LEFT JOIN empleados e ON u.empleado_id = e.empleado_id
+        LEFT JOIN sucursales s ON e.sucursal_id = s.sucursal_id
+        LEFT JOIN usuarios_roles ur ON u.usuario_id = ur.usuario_id AND ur.activo = true
+        LEFT JOIN roles r ON ur.rol_id = r.rol_id
+        WHERE 1=1
     `;
 
         const params = [];
         let paramCount = 0;
 
-        // Aplicar filtros
+        // Filtros
         if (q) {
             paramCount++;
             queryStr += ` AND (
-        u.email ILIKE $${paramCount} OR 
-        c.nombre ILIKE $${paramCount} OR 
-        c.apellido ILIKE $${paramCount} OR
-        e.nombre ILIKE $${paramCount} OR 
-        e.apellido ILIKE $${paramCount}
-      )`;
+            u.email ILIKE $${paramCount} OR
+            c.nombre ILIKE $${paramCount} OR
+            c.apellido ILIKE $${paramCount} OR
+            e.nombre ILIKE $${paramCount} OR
+            e.apellido ILIKE $${paramCount}
+        )`;
             params.push(`%${q}%`);
         }
 
@@ -87,10 +81,11 @@ class UserController {
         }
 
         // Agrupar
-        queryStr += ` GROUP BY 
-      u.usuario_id, u.email, u.tipo_usuario, u.provider, u.email_verificado, 
-      u.activo, u.fecha_creacion, u.fecha_ultimo_login, u.cliente_id, u.empleado_id,
-      c.nombre, c.apellido, c.telefono, e.nombre, e.apellido, e.puesto, s.nombre
+        queryStr += `
+        GROUP BY 
+            u.usuario_id, u.email, u.tipo_usuario, u.provider, u.email_verificado,
+            u.activo, u.fecha_creacion, u.fecha_ultimo_login, u.cliente_id, u.empleado_id,
+            c.nombre, c.apellido, c.telefono, e.nombre, e.apellido, e.puesto, s.nombre
     `;
 
         // Ordenar
@@ -109,28 +104,62 @@ class UserController {
         queryStr += ` OFFSET $${paramCount}`;
         params.push(offset);
 
-        // Ejecutar query
+        // Ejecutar query principal
         const result = await query(queryStr, params);
 
-        // Contar total
-        const countQuery = queryStr
-            .replace(/SELECT.*?FROM/s, 'SELECT COUNT(DISTINCT u.usuario_id) FROM')
-            .replace(/GROUP BY.*/, '')
-            .replace(/ORDER BY.*/, '')
-            .replace(/LIMIT \$\d+ OFFSET \$\d+/, '');
+        // ---------------------------------------
+        // COUNT (consultado de forma independiente)
+        // ---------------------------------------
+        let countStr = `
+        SELECT COUNT(DISTINCT u.usuario_id)
+        FROM usuarios u
+        LEFT JOIN clientes c ON u.cliente_id = c.cliente_id
+        LEFT JOIN empleados e ON u.empleado_id = e.empleado_id
+        LEFT JOIN usuarios_roles ur ON u.usuario_id = ur.usuario_id AND ur.activo = true
+        LEFT JOIN roles r ON ur.rol_id = r.rol_id
+        WHERE 1=1
+    `;
 
-        const countResult = await query(countQuery, params.slice(0, -2));
-        const total = parseInt(countResult.rows[0]?.count || 0);
+        const countParams = [];
+        let countParamCount = 0;
 
-        // Estadísticas adicionales
+        // mismos filtros
+        if (q) {
+            countParamCount++;
+            countStr += ` AND (
+            u.email ILIKE $${countParamCount} OR
+            c.nombre ILIKE $${countParamCount} OR
+            c.apellido ILIKE $${countParamCount} OR
+            e.nombre ILIKE $${countParamCount} OR
+            e.apellido ILIKE $${countParamCount}
+        )`;
+            countParams.push(`%${q}%`);
+        }
+
+        if (tipo_usuario) {
+            countParamCount++;
+            countStr += ` AND u.tipo_usuario = $${countParamCount}`;
+            countParams.push(tipo_usuario);
+        }
+
+        if (activo !== undefined) {
+            countParamCount++;
+            countStr += ` AND u.activo = $${countParamCount}`;
+            countParams.push(activo === 'true');
+        }
+
+        const countResult = await query(countStr, countParams);
+        const total = parseInt(countResult.rows[0].count);
+
+        // Stats
         const statsQuery = await query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN tipo_usuario = 'Empleado' THEN 1 END) as empleados,
-        COUNT(CASE WHEN tipo_usuario = 'Cliente' THEN 1 END) as clientes,
-        COUNT(CASE WHEN activo = true THEN 1 END) as activos,
-        COUNT(CASE WHEN email_verificado = true THEN 1 END) as verificados
-      FROM usuarios
+        SELECT 
+            COUNT(*) as total,
+            COUNT(CASE WHEN tipo_usuario = 'Empleado' THEN 1 END) as empleados,
+            COUNT(CASE WHEN tipo_usuario = 'Cliente' THEN 1 END) as clientes,
+            COUNT(CASE WHEN activo = true THEN 1 END) as activos,
+            COUNT(CASE WHEN email_verificado = true THEN 1 END) as verificados
+        FROM usuarios
     `);
 
         const stats = statsQuery.rows[0];
@@ -149,6 +178,7 @@ class UserController {
             }
         });
     });
+
 
     // =============================================
     // 2. OBTENER USUARIO POR ID

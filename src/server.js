@@ -12,6 +12,7 @@ import logger from "./utils/logger.js";
 
 // Rutas
 import authRoutes from "./routes/authRoutes.js";
+import roleRoutes from "./routes/roleRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 // import categoryRoutes from "./routes/categoryRoutes.js";
@@ -46,6 +47,7 @@ app.use(helmet());
 app.use(express.json()) // para parsear JSON
 // Configuración de CORS
 const allowedOrigins = [
+    'http://localhost:4000',  // tu frontend en desarrollo
     'http://localhost:3000',  // tu frontend en desarrollo
     'http://localhost:5173',  // si tienes otro dev server
     'https://tu-dominio-produccion.com' // producción
@@ -61,7 +63,9 @@ app.use(
                 callback(new Error('Not allowed by CORS'))
             }
         },
-        credentials: true
+        credentials: true,
+        allowedHeaders: ["Content-Type", "Authorization"],
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     })
 )
 app.use(express.json({ limit: "10mb" }));
@@ -90,6 +94,7 @@ app.get("/health", (req, res) => {
 
 // Rutas API
 app.use(`/api/${API_VERSION}/auth`, authRoutes);
+app.use(`/api/${API_VERSION}/roles`, roleRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes);
 app.use(`/api/${API_VERSION}/products`, productRoutes);
 // app.use(`/api/${API_VERSION}/categories`, categoryRoutes);

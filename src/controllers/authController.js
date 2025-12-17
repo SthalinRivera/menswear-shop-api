@@ -329,13 +329,19 @@ class AuthController {
             const token = req.headers.authorization?.split(' ')[1];
 
             if (token) {
+                console.log(`[Logout] Token recibido: ${token}`); // <-- LOG
+
                 // Invalidar sesión
-                await query(
+                const result = await query(
                     `UPDATE sesiones 
-           SET activa = false, motivo_cierre = 'Logout manual'
-           WHERE token_sesion = $1`,
+                 SET activa = false, motivo_cierre = 'Logout manual'
+                 WHERE token_sesion = $1 RETURNING *`,
                     [token]
                 );
+
+                console.log(`[Logout] Sesión actualizada:`, result.rows); // <-- LOG
+            } else {
+                console.log('[Logout] No se recibió token');
             }
 
             res.json({
@@ -344,6 +350,7 @@ class AuthController {
             });
 
         } catch (error) {
+            console.error('[Logout] Error:', error); // <-- LOG
             next(error);
         }
     };
@@ -383,6 +390,7 @@ class AuthController {
                     usuario: {
                         usuario_id: user.usuario_id,
                         email: user.email,
+                        nombre: user.username,
                         tipo_usuario: user.tipo_usuario,
                         email_verificado: user.email_verificado,
                         provider: user.provider,

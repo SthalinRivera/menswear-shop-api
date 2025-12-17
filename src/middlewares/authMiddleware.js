@@ -83,11 +83,14 @@ export const checkRole = (...roles) => {
 
 // Middleware para generar tokens
 export const generateTokens = async (user, ip = '127.0.0.1') => {
+    console.log("🔎 TOKEN: datos recibidos:", user);
+
     const tokenPayload = {
         usuario_id: user.usuario_id,
         email: user.email,
         tipo_usuario: user.tipo_usuario,
-        roles: user.roles.map(r => r.nombre)
+        // roles: user.roles.map(r => r.nombre)
+        roles: (user.roles || []).map(r => r.nombre) // <-- FIX
     };
 
     const accessToken = jwt.sign(tokenPayload, process.env.JWT_SECRET || JWT_SECRET, {
