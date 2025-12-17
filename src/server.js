@@ -48,9 +48,10 @@ app.use(express.json()) // para parsear JSON
 // Configuración de CORS
 const allowedOrigins = [
     'http://localhost:4000',  // tu frontend en desarrollo
-    'http://localhost:3000',  // tu frontend en desarrollo
-    'http://localhost:5173',  // si tienes otro dev server
-    'https://tu-dominio-produccion.com' // producción
+    'http://localhost:3000',  // si tienes otro dev server
+    'https://menswear-shop-api.vercel.app/', // api producción
+    'https://menswear-shop-ten.vercel.app', //front producción
+
 ]
 
 app.use(
