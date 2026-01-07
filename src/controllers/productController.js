@@ -368,7 +368,7 @@ class ProductController {
                 // Registrar en historial de precios
                 await client.query(
                     `INSERT INTO historial_precios (producto_id, precio_anterior, precio_nuevo, motivo, cambiado_por)
-           VALUES ($1, NULL, $2, 'Creación producto', $3)`,
+           VALUES ($1, NULL, $2, 'Otro', $3)`,
                     [newProduct.producto_id, precio_venta, req.user.empleado_id || null]
                 );
 
