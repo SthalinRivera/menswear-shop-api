@@ -27,21 +27,54 @@ class ProductController {
         // 1) QUERY PRINCIPAL (PRODUCTOS)
         // ============================
 
+        //         let queryStr = `
+        //     SELECT p.*, 
+        //            c.nombre AS categoria_nombre,
+        //            m.nombre AS marca_nombre,
+        //            COALESCE((
+        //              SELECT SUM(vp.stock_disponible) 
+        //              FROM variantes_producto vp 
+        //              WHERE vp.producto_id = p.producto_id 
+        //                AND vp.activo = true
+        //            ), 0) AS stock_total
+        //     FROM productos p
+        //     LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+        //     LEFT JOIN marcas m ON p.marca_id = m.marca_id
+        //     WHERE p.activo = true
+        //   `;
         let queryStr = `
-    SELECT p.*, 
-           c.nombre AS categoria_nombre,
-           m.nombre AS marca_nombre,
-           COALESCE((
-             SELECT SUM(vp.stock_disponible) 
-             FROM variantes_producto vp 
-             WHERE vp.producto_id = p.producto_id 
-               AND vp.activo = true
-           ), 0) AS stock_total
-    FROM productos p
-    LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
-    LEFT JOIN marcas m ON p.marca_id = m.marca_id
-    WHERE p.activo = true
-  `;
+SELECT 
+  p.*, 
+  c.nombre AS categoria_nombre,
+  m.nombre AS marca_nombre,
+
+  COALESCE((
+    SELECT json_agg(
+      json_build_object(
+        'url', ip.url_imagen,
+        'es_principal', ip.es_principal,
+        'orden', ip.orden
+      )
+      ORDER BY ip.orden
+    )
+    FROM imagenes_producto ip
+    WHERE ip.producto_id = p.producto_id
+      AND ip.activo = true
+  ), '[]') AS imagenes,
+
+  COALESCE((
+    SELECT SUM(vp.stock_disponible) 
+    FROM variantes_producto vp 
+    WHERE vp.producto_id = p.producto_id 
+      AND vp.activo = true
+  ), 0) AS stock_total
+
+FROM productos p
+LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+LEFT JOIN marcas m ON p.marca_id = m.marca_id
+WHERE p.activo = true
+`;
+
 
         const params = [];
         let paramCount = 0;
@@ -204,7 +237,7 @@ class ProductController {
                 return {
                     ...product,
                     variantes: variantsResult.rows,
-                    imagenes: [] // Aquí puedes agregar la lógica que necesites
+
                 };
             })
         );
@@ -230,15 +263,38 @@ class ProductController {
     static getProductById = asyncHandler(async (req, res) => {
         const { id } = req.params;
 
+        // Query principal con imágenes y stock total
         const result = await query(
-            `SELECT p.*, 
-              c.nombre as categoria_nombre, c.categoria_padre_id,
-              m.nombre as marca_nombre,
-              (SELECT nombre FROM categorias WHERE categoria_id = c.categoria_padre_id) as categoria_padre_nombre
-       FROM productos p
-       LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
-       LEFT JOIN marcas m ON p.marca_id = m.marca_id
-       WHERE p.producto_id = $1 AND p.activo = true`,
+            `
+        SELECT 
+            p.*, 
+            c.nombre AS categoria_nombre,
+            m.nombre AS marca_nombre,
+            COALESCE((
+                SELECT json_agg(
+                    json_build_object(
+                        'url', ip.url_imagen,
+                        'es_principal', ip.es_principal,
+                        'orden', ip.orden
+                    )
+                    ORDER BY ip.orden
+                )
+                FROM imagenes_producto ip
+                WHERE ip.producto_id = p.producto_id
+                  AND ip.activo = true
+            ), '[]') AS imagenes,
+            COALESCE((
+                SELECT SUM(vp.stock_disponible) 
+                FROM variantes_producto vp 
+                WHERE vp.producto_id = p.producto_id
+                  AND vp.activo = true
+            ), 0) AS stock_total
+        FROM productos p
+        LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+        LEFT JOIN marcas m ON p.marca_id = m.marca_id
+        WHERE p.producto_id = $1
+          AND p.activo = true
+        `,
             [id]
         );
 
@@ -251,57 +307,57 @@ class ProductController {
 
         const product = result.rows[0];
 
-        // Obtener variantes
+        // Variantes
         const variantsResult = await query(
             `SELECT vp.*, 
-              json_agg(
+            json_agg(
                 json_build_object(
-                  'almacen_id', i.almacen_id,
-                  'nombre', a.nombre,
-                  'cantidad', i.cantidad,
-                  'ubicacion', i.ubicacion
+                    'almacen_id', i.almacen_id,
+                    'nombre', a.nombre,
+                    'cantidad', i.cantidad,
+                    'ubicacion', i.ubicacion
                 )
-              ) as inventario
-       FROM variantes_producto vp
-       LEFT JOIN inventario i ON vp.variante_id = i.variante_id
-       LEFT JOIN almacenes a ON i.almacen_id = a.almacen_id
-       WHERE vp.producto_id = $1 AND vp.activo = true
-       GROUP BY vp.variante_id
-       ORDER BY vp.talla, vp.color_nombre`,
+            ) AS inventario
+         FROM variantes_producto vp
+         LEFT JOIN inventario i ON vp.variante_id = i.variante_id
+         LEFT JOIN almacenes a ON i.almacen_id = a.almacen_id
+         WHERE vp.producto_id = $1 AND vp.activo = true
+         GROUP BY vp.variante_id
+         ORDER BY vp.talla, vp.color_nombre`,
             [id]
         );
 
-        // Obtener reseñas
+        // Reseñas
         const reviewsResult = await query(
             `SELECT r.*, 
-              c.nombre as cliente_nombre, c.apellido as cliente_apellido
-       FROM reseñas_productos r
-       LEFT JOIN clientes c ON r.cliente_id = c.cliente_id
-       WHERE r.producto_id = $1 AND r.aprobada = true
-       ORDER BY r.fecha_creacion DESC
-       LIMIT 10`,
+            c.nombre AS cliente_nombre, c.apellido AS cliente_apellido
+         FROM reseñas_productos r
+         LEFT JOIN clientes c ON r.cliente_id = c.cliente_id
+         WHERE r.producto_id = $1 AND r.aprobada = true
+         ORDER BY r.fecha_creacion DESC
+         LIMIT 10`,
             [id]
         );
 
-        // Obtener productos relacionados (misma categoría)
+        // Productos relacionados
         const relatedResult = await query(
             `SELECT p.producto_id, p.sku, p.nombre, p.precio_final, p.es_promocion, p.precio_promocion,
-              (SELECT COUNT(*) FROM variantes_producto vp WHERE vp.producto_id = p.producto_id AND vp.stock_disponible > 0) as tiene_stock
-       FROM productos p
-       WHERE p.categoria_id = $1 
-         AND p.producto_id != $2 
-         AND p.activo = true
-       ORDER BY RANDOM()
-       LIMIT 6`,
+            (SELECT COUNT(*) FROM variantes_producto vp WHERE vp.producto_id = p.producto_id AND vp.stock_disponible > 0) AS tiene_stock
+         FROM productos p
+         WHERE p.categoria_id = $1
+           AND p.producto_id != $2
+           AND p.activo = true
+         ORDER BY RANDOM()
+         LIMIT 6`,
             [product.categoria_id, id]
         );
 
-        // Obtener historial de precios
+        // Historial de precios
         const priceHistoryResult = await query(
             `SELECT * FROM historial_precios 
-       WHERE producto_id = $1 
-       ORDER BY fecha_cambio DESC
-       LIMIT 10`,
+         WHERE producto_id = $1 
+         ORDER BY fecha_cambio DESC
+         LIMIT 10`,
             [id]
         );
 
@@ -316,6 +372,8 @@ class ProductController {
             }
         });
     });
+
+
 
     // Crear nuevo producto
     static createProduct = [
@@ -394,7 +452,11 @@ class ProductController {
         validate(validationSchemas.updateProduct),
         asyncHandler(async (req, res) => {
             const { id } = req.params;
-            const updateData = req.body;
+            const updateData = { ...req.body }; // clonamos para no mutar req.body
+
+            // Extraer motivo_cambio y eliminar del objeto updateData
+            const motivoCambio = updateData.motivo_cambio || 'Ajuste de precio';
+            delete updateData.motivo_cambio;
 
             // Verificar si el producto existe
             const existingProduct = await query(
@@ -433,11 +495,11 @@ class ProductController {
 
             values.push(id);
             const queryStr = `
-        UPDATE productos 
-        SET ${fields.join(', ')}, fecha_actualizacion = NOW()
-        WHERE producto_id = $${paramCount}
-        RETURNING *
-      `;
+      UPDATE productos 
+      SET ${fields.join(', ')}, fecha_actualizacion = NOW()
+      WHERE producto_id = $${paramCount}
+      RETURNING *
+    `;
 
             const result = await query(queryStr, values);
             const updatedProduct = result.rows[0];
@@ -446,8 +508,8 @@ class ProductController {
             if (updateData.precio_venta && updateData.precio_venta !== oldPrice) {
                 await query(
                     `INSERT INTO historial_precios (producto_id, precio_anterior, precio_nuevo, motivo, cambiado_por)
-           VALUES ($1, $2, $3, $4, $5)`,
-                    [id, oldPrice, updateData.precio_venta, updateData.motivo_cambio || 'Ajuste de precio', req.user.empleado_id || null]
+         VALUES ($1, $2, $3, $4, $5)`,
+                    [id, oldPrice, updateData.precio_venta, motivoCambio, req.user.empleado_id || null]
                 );
             }
 
