@@ -50,6 +50,18 @@ router.post('/:producto_id/variantes',
     ]),
     ProductController.createVariant
 );
+// Cambiar estado activo/inactivo del producto
+router.patch(
+    '/:id/status',
+    authenticateJWT,
+    checkPermission('PRODUCTOS_EDITAR'),
+    validate([
+        body('activo')
+            .isBoolean()
+            .withMessage('El campo activo debe ser boolean')
+    ]),
+    ProductController.toggleProductStatus
+);
 
 router.put('/variantes/:variante_id/stock',
     authenticateJWT,

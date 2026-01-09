@@ -6,7 +6,7 @@ import { PAGINATION } from '../config/constants.js';
 
 class ProductController {
     // Obtener todos los productos con filtros
-    static getProducts = asyncHandler(async (req, res) => {
+    static getProductsCliente = asyncHandler(async (req, res) => {
         const {
             page = 1,
             limit = PAGINATION.DEFAULT_LIMIT,
@@ -258,6 +258,266 @@ WHERE p.activo = true
         });
     });
 
+    static getProducts = asyncHandler(async (req, res) => {
+        const {
+            page = 1,
+            limit = PAGINATION.DEFAULT_LIMIT,
+            q = '',
+            categoria_id,
+            marca_id,
+            genero,
+            minPrice,
+            maxPrice,
+            enPromocion,
+            activo,
+            sortBy = 'fecha_creacion',
+            sortOrder = 'desc'
+        } = req.query;
+
+        const offset = (page - 1) * limit;
+
+        // ============================
+        // 1) QUERY PRINCIPAL (PRODUCTOS)
+        // ============================
+
+        //         let queryStr = `
+        //     SELECT p.*, 
+        //            c.nombre AS categoria_nombre,
+        //            m.nombre AS marca_nombre,
+        //            COALESCE((
+        //              SELECT SUM(vp.stock_disponible) 
+        //              FROM variantes_producto vp 
+        //              WHERE vp.producto_id = p.producto_id 
+        //                AND vp.activo = true
+        //            ), 0) AS stock_total
+        //     FROM productos p
+        //     LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+        //     LEFT JOIN marcas m ON p.marca_id = m.marca_id
+        //     WHERE p.activo = true
+        //   `;
+        let queryStr = `
+SELECT 
+  p.*, 
+  c.nombre AS categoria_nombre,
+  m.nombre AS marca_nombre,
+
+  COALESCE((
+    SELECT json_agg(
+      json_build_object(
+        'url', ip.url_imagen,
+        'es_principal', ip.es_principal,
+        'orden', ip.orden
+      )
+      ORDER BY ip.orden
+    )
+    FROM imagenes_producto ip
+    WHERE ip.producto_id = p.producto_id
+      AND ip.activo = true
+  ), '[]') AS imagenes,
+
+  COALESCE((
+    SELECT SUM(vp.stock_disponible) 
+    FROM variantes_producto vp 
+    WHERE vp.producto_id = p.producto_id 
+      AND vp.activo = true
+  ), 0) AS stock_total
+
+FROM productos p
+LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+LEFT JOIN marcas m ON p.marca_id = m.marca_id
+WHERE 1=1
+`;
+        if (activo !== undefined) {
+            paramCount++
+            queryStr += ` AND p.activo = $${paramCount}`
+            params.push(activo === 'true')
+        }
+
+        const params = [];
+        let paramCount = 0;
+
+        // Filtros
+        if (q) {
+            paramCount++;
+            queryStr += ` AND (p.nombre ILIKE $${paramCount} 
+                   OR p.sku ILIKE $${paramCount}
+                   OR p.descripcion ILIKE $${paramCount})`;
+            params.push(`%${q}%`);
+        }
+
+        if (categoria_id) {
+            paramCount++;
+            queryStr += ` AND p.categoria_id IN (
+      SELECT categoria_id FROM categorias 
+      WHERE categoria_id = $${paramCount} 
+         OR categoria_padre_id = $${paramCount}
+    )`;
+            params.push(categoria_id);
+        }
+
+        if (marca_id) {
+            paramCount++;
+            queryStr += ` AND p.marca_id = $${paramCount}`;
+            params.push(marca_id);
+        }
+
+        if (genero) {
+            paramCount++;
+            queryStr += ` AND p.genero = $${paramCount}`;
+            params.push(genero);
+        }
+
+        if (minPrice) {
+            paramCount++;
+            queryStr += ` AND p.precio_final >= $${paramCount}`;
+            params.push(minPrice);
+        }
+
+        if (maxPrice) {
+            paramCount++;
+            queryStr += ` AND p.precio_final <= $${paramCount}`;
+            params.push(maxPrice);
+        }
+
+        if (enPromocion === 'true') {
+            queryStr += ` AND p.es_promocion = true 
+                  AND CURRENT_DATE BETWEEN p.fecha_inicio_promocion 
+                                      AND p.fecha_fin_promocion`;
+        }
+
+        // Ordenamiento
+        const validSortColumns = ['nombre', 'precio_final', 'fecha_creacion', 'stock_total'];
+        const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'fecha_creacion';
+
+        if (sortColumn === 'stock_total') {
+            queryStr += ` ORDER BY stock_total ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
+        } else {
+            queryStr += ` ORDER BY p.${sortColumn} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
+        }
+
+        // Paginación
+        paramCount++;
+        queryStr += ` LIMIT $${paramCount}`;
+        params.push(limit);
+
+        paramCount++;
+        queryStr += ` OFFSET $${paramCount}`;
+        params.push(offset);
+
+        const result = await query(queryStr, params);
+
+        // ============================
+        // 2) QUERY DE TOTAL (COUNT)
+        // ============================
+
+        let countQuery = `
+    SELECT COUNT(*)
+    FROM productos p
+    LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+    LEFT JOIN marcas m ON p.marca_id = m.marca_id
+    WHERE 1=1
+  `;
+        if (activo !== undefined) {
+            countParamCount++
+            countQuery += ` AND p.activo = $${countParamCount}`
+            countParams.push(activo === 'true')
+        }
+        const countParams = [];
+        let countParamCount = 0;
+
+        if (q) {
+            countParamCount++;
+            countQuery += ` AND (p.nombre ILIKE $${countParamCount} 
+                     OR p.sku ILIKE $${countParamCount}
+                     OR p.descripcion ILIKE $${countParamCount})`;
+            countParams.push(`%${q}%`);
+        }
+
+        if (categoria_id) {
+            countParamCount++;
+            countQuery += ` AND p.categoria_id IN (
+      SELECT categoria_id FROM categorias 
+      WHERE categoria_id = $${countParamCount} 
+         OR categoria_padre_id = $${countParamCount}
+    )`;
+            countParams.push(categoria_id);
+        }
+
+        if (marca_id) {
+            countParamCount++;
+            countQuery += ` AND p.marca_id = $${countParamCount}`;
+            countParams.push(marca_id);
+        }
+
+        if (genero) {
+            countParamCount++;
+            countQuery += ` AND p.genero = $${countParamCount}`;
+            countParams.push(genero);
+        }
+
+        if (minPrice) {
+            countParamCount++;
+            countQuery += ` AND p.precio_final >= $${countParamCount}`;
+            countParams.push(minPrice);
+        }
+
+        if (maxPrice) {
+            countParamCount++;
+            countQuery += ` AND p.precio_final <= $${countParamCount}`;
+            countParams.push(maxPrice);
+        }
+
+        if (enPromocion === 'true') {
+            countQuery += ` AND p.es_promocion = true 
+                    AND CURRENT_DATE BETWEEN p.fecha_inicio_promocion 
+                                        AND p.fecha_fin_promocion`;
+        }
+
+        const countResult = await query(countQuery, countParams);
+        const total = parseInt(countResult.rows[0].count);
+
+        // ============================
+        // 3) VARIANTES POR PRODUCTO
+        // ============================
+
+        const productsWithVariants = await Promise.all(
+            result.rows.map(async (product) => {
+                const variantsResult = await query(
+                    `SELECT vp.*, 
+                COALESCE(SUM(i.cantidad), 0) AS stock_total_almacenes
+         FROM variantes_producto vp
+         LEFT JOIN inventario i 
+                ON vp.variante_id = i.variante_id
+         WHERE vp.producto_id = $1 
+           AND vp.activo = true
+         GROUP BY vp.variante_id
+         ORDER BY vp.talla, vp.color_nombre`,
+                    [product.producto_id]
+                );
+
+                return {
+                    ...product,
+                    variantes: variantsResult.rows,
+
+                };
+            })
+        );
+
+        // ============================
+        // 4) RESPUESTA FINAL
+        // ============================
+
+        res.json({
+            success: true,
+            data: productsWithVariants,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        });
+    });
 
     // Obtener producto por ID
     static getProductById = asyncHandler(async (req, res) => {
@@ -645,16 +905,76 @@ WHERE p.activo = true
             data: result.rows
         });
     });
+    // Activar/Desactivar producto
+    static toggleProductStatus = asyncHandler(async (req, res) => {
+        const { id } = req.params
+        const { activo } = req.body
 
+        // 1️⃣ Verificar que el producto exista
+        const existingProduct = await query(
+            'SELECT producto_id, activo FROM productos WHERE producto_id = $1',
+            [id]
+        )
+
+        if (existingProduct.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Producto no encontrado'
+            })
+        }
+
+        // 2️⃣ Actualizar estado
+        const result = await query(
+            `
+    UPDATE productos
+    SET activo = $1,
+        fecha_actualizacion = NOW()
+    WHERE producto_id = $2
+    RETURNING producto_id, activo
+    `,
+            [activo, id]
+        )
+
+        // 3️⃣ (Opcional recomendado) Desactivar variantes si se desactiva el producto
+        if (activo === false) {
+            await query(
+                'UPDATE variantes_producto SET activo = false WHERE producto_id = $1',
+                [id]
+            )
+        }
+
+        res.json({
+            success: true,
+            message: `Producto ${activo ? 'activado' : 'desactivado'} correctamente`,
+            data: result.rows[0]
+        })
+    })
+    // Crear variante de producto
     // Crear variante de producto
     static createVariant = asyncHandler(async (req, res) => {
-        const { producto_id } = req.params;
-        const { talla, color_nombre, color_hex, codigo_barras, ubicacion_almacen } = req.body;
+        const productoId = Number(req.params.producto_id);
+
+        const {
+            talla,
+            color_nombre,
+            color_hex,
+            codigo_barras,
+            stock_actual,
+            ubicacion_almacen,
+            activo
+        } = req.body;
+
+        if (!productoId) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID de producto inválido'
+            });
+        }
 
         // Verificar si el producto existe
         const productCheck = await query(
             'SELECT producto_id FROM productos WHERE producto_id = $1 AND activo = true',
-            [producto_id]
+            [productoId]
         );
 
         if (productCheck.rows.length === 0) {
@@ -664,11 +984,14 @@ WHERE p.activo = true
             });
         }
 
-        // Verificar si la combinación talla-color ya existe
+        // Verificar combinación talla + color
         const existingVariant = await query(
-            `SELECT variante_id FROM variantes_producto 
-       WHERE producto_id = $1 AND talla = $2 AND color_nombre = $3`,
-            [producto_id, talla, color_nombre]
+            `SELECT variante_id 
+         FROM variantes_producto 
+         WHERE producto_id = $1 
+           AND talla = $2 
+           AND LOWER(color_nombre) = LOWER($3)`,
+            [productoId, talla, color_nombre]
         );
 
         if (existingVariant.rows.length > 0) {
@@ -681,11 +1004,30 @@ WHERE p.activo = true
         // Insertar variante
         const result = await query(
             `INSERT INTO variantes_producto (
-        producto_id, talla, color_nombre, color_hex, 
-        codigo_barras, ubicacion_almacen
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING *`,
-            [producto_id, talla, color_nombre, color_hex || null, codigo_barras || null, ubicacion_almacen || null]
+            producto_id,
+            talla,
+            color_nombre,
+            color_hex,
+            codigo_barras,
+            stock_actual,
+            ubicacion_almacen,
+            activo,
+            fecha_ultima_entrada
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, CURRENT_DATE
+        )
+        RETURNING *`,
+            [
+                productoId,
+                talla,
+                color_nombre,
+                color_hex || null,
+                codigo_barras || null,
+                stock_actual ?? 0,
+                ubicacion_almacen || null,
+                activo ?? true
+            ]
         );
 
         res.status(201).json({
@@ -694,6 +1036,7 @@ WHERE p.activo = true
             data: result.rows[0]
         });
     });
+
 
     // Actualizar stock de variante
     static updateVariantStock = asyncHandler(async (req, res) => {

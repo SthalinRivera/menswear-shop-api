@@ -23,7 +23,7 @@ import productImageRoutes from "./routes/productImageRoutes.js";
 // import customerRoutes from "./routes/customerRoutes.js";
 // import supplierRoutes from "./routes/supplierRoutes.js";
 // import purchaseRoutes from "./routes/purchaseRoutes.js";
-// import warehouseRoutes from "./routes/warehouseRoutes.js";
+import warehouseRoutes from "./routes/warehouseRoutes.js";
 // import promotionRoutes from "./routes/promotionRoutes.js";
 // import reportRoutes from "./routes/reportRoutes.js";
 
@@ -107,7 +107,7 @@ app.use(`/api/${API_VERSION}/images`, productImageRoutes);
 // app.use(`/api/${API_VERSION}/customers`, customerRoutes);
 // app.use(`/api/${API_VERSION}/suppliers`, supplierRoutes);
 // app.use(`/api/${API_VERSION}/purchases`, purchaseRoutes);
-// app.use(`/api/${API_VERSION}/warehouses`, warehouseRoutes);
+app.use(`/api/${API_VERSION}/warehouses`, warehouseRoutes);
 // app.use(`/api/${API_VERSION}/promotions`, promotionRoutes);
 // app.use(`/api/${API_VERSION}/reports`, reportRoutes);
 
