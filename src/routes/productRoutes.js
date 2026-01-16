@@ -8,6 +8,11 @@ import { validate, validationSchemas } from "../middlewares/validationMiddleware
 
 const router = express.Router();
 // Rutas públicas (solo lectura)
+router.get('/catalog',
+    validate(validationSchemas.pagination.concat(validationSchemas.search)),
+    ProductController.getProductsCatalog
+);
+// Rutas públicas (solo lectura)
 router.get('/',
     validate(validationSchemas.pagination.concat(validationSchemas.search)),
     ProductController.getProducts

@@ -6,7 +6,7 @@ import { PAGINATION } from '../config/constants.js';
 
 class ProductController {
     // Obtener todos los productos con filtros
-    static getProductsCliente = asyncHandler(async (req, res) => {
+    static getProductsCatalog = asyncHandler(async (req, res) => {
         const {
             page = 1,
             limit = PAGINATION.DEFAULT_LIMIT,

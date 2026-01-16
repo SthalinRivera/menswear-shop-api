@@ -20,7 +20,7 @@ import brandRoutes from "./routes/brandRoutes.js";
 import productImageRoutes from "./routes/productImageRoutes.js";
 // import inventoryRoutes from "./routes/inventoryRoutes.js";
 // import saleRoutes from "./routes/saleRoutes.js";
-// import customerRoutes from "./routes/customerRoutes.js";
+import customerRoutes from "./routes/customerRoutes.js";
 // import supplierRoutes from "./routes/supplierRoutes.js";
 // import purchaseRoutes from "./routes/purchaseRoutes.js";
 import warehouseRoutes from "./routes/warehouseRoutes.js";
@@ -32,7 +32,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_VERSION = process.env.API_VERSION || "v1";
-
+    
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -104,7 +104,7 @@ app.use(`/api/${API_VERSION}/brands`, brandRoutes);
 app.use(`/api/${API_VERSION}/images`, productImageRoutes);
 // app.use(`/api/${API_VERSION}/inventory`, inventoryRoutes);
 // app.use(`/api/${API_VERSION}/sales`, saleRoutes);
-// app.use(`/api/${API_VERSION}/customers`, customerRoutes);
+app.use(`/api/${API_VERSION}/customers`, customerRoutes);
 // app.use(`/api/${API_VERSION}/suppliers`, supplierRoutes);
 // app.use(`/api/${API_VERSION}/purchases`, purchaseRoutes);
 app.use(`/api/${API_VERSION}/warehouses`, warehouseRoutes);
