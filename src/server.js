@@ -50,8 +50,8 @@ app.use(express.json()) // para parsear JSON
 const allowedOrigins = [
     'http://localhost:4000',  // tu frontend en desarrollo
     'http://localhost:3000',  // si tienes otro dev server
-    'https://menswear-shop-api.vercel.app/', // api producción
-    'https://ricenstore.vercel.app/', //front producción
+    'https://menswear-shop-api.vercel.app', // api producción
+    'https://ricenstore.vercel.app', //front producción
 
 ]
 
