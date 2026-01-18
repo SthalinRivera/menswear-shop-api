@@ -51,7 +51,7 @@ const allowedOrigins = [
     'http://localhost:4000',  // tu frontend en desarrollo
     'http://localhost:3000',  // si tienes otro dev server
     'https://menswear-shop-api.vercel.app/', // api producción
-    'https://menswear-shop-ten.vercel.app', //front producción
+    'https://ricenstore.vercel.app/', //front producción
 
 ]
 
