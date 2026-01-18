@@ -42,7 +42,7 @@ class ProductController {
         //     LEFT JOIN marcas m ON p.marca_id = m.marca_id
         //     WHERE p.activo = true
         //   `;
-        let queryStr = `
+       let queryStr = `
 SELECT 
   p.*, 
   c.nombre AS categoria_nombre,
@@ -67,7 +67,17 @@ SELECT
     FROM variantes_producto vp 
     WHERE vp.producto_id = p.producto_id 
       AND vp.activo = true
-  ), 0) AS stock_total
+  ), 0) AS stock_total,
+
+  -- CALCULAR PRECIO PROMOCIÓN SI EXISTE DESCUENTO
+  CASE 
+    WHEN p.es_promocion = true 
+      AND p.porcentaje_descuento > 0
+      AND CURRENT_DATE BETWEEN COALESCE(p.fecha_inicio_promocion, CURRENT_DATE) 
+                          AND COALESCE(p.fecha_fin_promocion, CURRENT_DATE)
+    THEN ROUND(p.precio_final * (1 - p.porcentaje_descuento / 100), 2)
+    ELSE NULL
+  END AS precio_promocion_calculado
 
 FROM productos p
 LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
@@ -138,7 +148,7 @@ WHERE p.activo = true
             queryStr += ` ORDER BY p.${sortColumn} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
         }
 
-        // Paginación
+        // Paginación   
         paramCount++;
         queryStr += ` LIMIT $${paramCount}`;
         params.push(limit);
@@ -222,20 +232,21 @@ WHERE p.activo = true
         const productsWithVariants = await Promise.all(
             result.rows.map(async (product) => {
                 const variantsResult = await query(
-                    `SELECT vp.*, 
-                COALESCE(SUM(i.cantidad), 0) AS stock_total_almacenes
-         FROM variantes_producto vp
-         LEFT JOIN inventario i 
+            `SELECT vp.*, 
+            COALESCE(SUM(i.cantidad), 0) AS stock_total_almacenes
+            FROM variantes_producto vp
+            LEFT JOIN inventario i 
                 ON vp.variante_id = i.variante_id
-         WHERE vp.producto_id = $1 
-           AND vp.activo = true
-         GROUP BY vp.variante_id
-         ORDER BY vp.talla, vp.color_nombre`,
-                    [product.producto_id]
-                );
+            WHERE vp.producto_id = $1 
+            AND vp.activo = true
+            GROUP BY vp.variante_id
+            ORDER BY vp.talla, vp.color_nombre`,
+            [product.producto_id]
+        );
 
                 return {
                     ...product,
+                    precio_promocion: product.precio_promocion_calculado, // Usar el calculado
                     variantes: variantsResult.rows,
 
                 };
@@ -524,8 +535,8 @@ WHERE 1=1
         const { id } = req.params;
 
         // Query principal con imágenes y stock total
-        const result = await query(
-            `
+          const result = await query(
+        `
         SELECT 
             p.*, 
             c.nombre AS categoria_nombre,
@@ -548,15 +559,24 @@ WHERE 1=1
                 FROM variantes_producto vp 
                 WHERE vp.producto_id = p.producto_id
                   AND vp.activo = true
-            ), 0) AS stock_total
+            ), 0) AS stock_total,
+            -- AÑADIR ESTE CÁLCULO
+            CASE 
+                WHEN p.es_promocion = true 
+                  AND p.porcentaje_descuento > 0
+                  AND CURRENT_DATE BETWEEN COALESCE(p.fecha_inicio_promocion, CURRENT_DATE) 
+                                      AND COALESCE(p.fecha_fin_promocion, CURRENT_DATE)
+                THEN ROUND(p.precio_final * (1 - p.porcentaje_descuento / 100), 2)
+                ELSE NULL
+            END AS precio_promocion_calculado
         FROM productos p
         LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
         LEFT JOIN marcas m ON p.marca_id = m.marca_id
         WHERE p.producto_id = $1
           AND p.activo = true
         `,
-            [id]
-        );
+        [id]
+    );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
