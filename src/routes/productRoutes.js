@@ -91,5 +91,18 @@ router.get('/stats/overview',
     checkPermission('VENTAS_REPORTES'),
     ProductController.getProductStats
 );
-
+// Rutas para variantes
+router.get('/:producto_id/variantes', ProductController.getProductVariants);
+router.get('/:producto_id/variantes/:variante_id', ProductController.getVariantById);
+router.put('/:producto_id/variantes/:variante_id', 
+  validate(validationSchemas.updateVariant), 
+  ProductController.updateVariant
+);
+router.delete('/:producto_id/variantes/:variante_id', 
+  validate(validationSchemas.deleteVariant), 
+  ProductController.deleteVariant
+);
+router.post('/:producto_id/variantes/:variante_id/transferir', ProductController.transferVariantStock);
+// Nueva rpara todas las variantes
+router.get('/variantes/todas', ProductController.getAllVariants);
 export default router;

@@ -82,20 +82,49 @@ export const checkRole = (...roles) => {
 };
 
 // Middleware para generar tokens
+
 export const generateTokens = async (user, ip = '127.0.0.1') => {
     console.log("🔎 TOKEN: datos recibidos:", user);
+
+    // Obtener información del empleado si el usuario es empleado
+    let empleado_id = null;
+    let sucursal_id = null;
+
+    if (user.tipo_usuario === 'Empleado' && user.empleado_id) {
+        try {
+            const empleadoResult = await query(
+                `SELECT e.empleado_id, e.sucursal_id, e.puesto, s.nombre as sucursal_nombre
+                 FROM empleados e
+                 LEFT JOIN sucursales s ON e.sucursal_id = s.sucursal_id
+                 WHERE e.empleado_id = $1`,
+                [user.empleado_id]
+            );
+
+            if (empleadoResult.rows.length > 0) {
+                empleado_id = empleadoResult.rows[0].empleado_id;
+                sucursal_id = empleadoResult.rows[0].sucursal_id;
+            }
+        } catch (error) {
+            console.error('Error al obtener datos del empleado:', error);
+        }
+    }
 
     const tokenPayload = {
         usuario_id: user.usuario_id,
         email: user.email,
         tipo_usuario: user.tipo_usuario,
-        // roles: user.roles.map(r => r.nombre)
-        roles: (user.roles || []).map(r => r.nombre) // <-- FIX
+        empleado_id: empleado_id,
+        sucursal_id: sucursal_id,
+        roles: (user.roles || []).map(r => r.nombre)
     };
 
-    const accessToken = jwt.sign(tokenPayload, process.env.JWT_SECRET || JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRE || '7d'
-    });
+    console.log("🔎 TOKEN: payload generado:", tokenPayload);
+
+    const accessToken = jwt.sign(
+        tokenPayload,
+        process.env.JWT_SECRET || JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRE || '7d' }
+    );
 
     const refreshToken = jwt.sign(
         { usuario_id: user.usuario_id },

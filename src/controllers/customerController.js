@@ -87,7 +87,7 @@ class CustomerController {
         if (!fields.length) {
             return res.status(400).json({ message: 'Nada para actualizar' });
         }
-
+        
         values.push(id);
 
         const result = await query(

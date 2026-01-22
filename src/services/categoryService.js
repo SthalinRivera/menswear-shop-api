@@ -1,3 +1,4 @@
+// src/services/CategoryService.js - VERSIÓN CORREGIDA
 import pool from "../config/database.js";
 
 class CategoryService {
@@ -6,7 +7,8 @@ class CategoryService {
         const {
             search = '',
             only_active = true,
-            nivel = null
+            nivel = null,
+            categoria_padre_id = null  // Añadir este filtro
         } = filters;
 
         const {
@@ -18,28 +20,30 @@ class CategoryService {
 
         const offset = (page - 1) * limit;
 
+        // CORREGIR: Usar 'activa' en lugar de 'activo'
         let query = `
-      SELECT 
-        c.*,
-        cp.nombre as categoria_padre_nombre,
-        COUNT(p.producto_id) as total_productos
-      FROM categorias c
-      LEFT JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
-      LEFT JOIN productos p ON c.categoria_id = p.categoria_id
-    `;
+            SELECT 
+                c.*,
+                cp.nombre as categoria_padre_nombre,
+                COUNT(p.producto_id) as total_productos
+            FROM categorias c
+            LEFT JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
+            LEFT JOIN productos p ON c.categoria_id = p.categoria_id
+        `;
 
         const whereConditions = [];
         const queryParams = [];
 
+        // CORREGIR: 'activa' en lugar de 'activo'
         if (only_active) {
-            whereConditions.push('c.activo = TRUE');
+            whereConditions.push('c.activa = TRUE');
         }
 
         if (search) {
             whereConditions.push(`(
-        c.nombre ILIKE $${queryParams.length + 1} OR 
-        c.descripcion ILIKE $${queryParams.length + 1}
-      )`);
+                c.nombre ILIKE $${queryParams.length + 1} OR 
+                c.descripcion ILIKE $${queryParams.length + 1}
+            )`);
             queryParams.push(`%${search}%`);
         }
 
@@ -48,36 +52,49 @@ class CategoryService {
             queryParams.push(nivel);
         }
 
+        if (categoria_padre_id !== undefined && categoria_padre_id !== null) {
+            if (categoria_padre_id === 'null' || categoria_padre_id === null) {
+                whereConditions.push('c.categoria_padre_id IS NULL');
+            } else {
+                whereConditions.push(`c.categoria_padre_id = $${queryParams.length + 1}`);
+                queryParams.push(categoria_padre_id);
+            }
+        }
+
         if (whereConditions.length > 0) {
             query += ' WHERE ' + whereConditions.join(' AND ');
         }
 
+        // CORREGIR: No ordenar por 'orden' ya que no existe
         query += `
-      GROUP BY c.categoria_id, cp.categoria_id
-      ORDER BY ${sort_by} ${sort_order}
-      LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
-    `;
+            GROUP BY c.categoria_id, cp.categoria_id
+            ORDER BY ${this.getValidSortField(sort_by)} ${sort_order}
+            LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+        `;
 
         queryParams.push(limit, offset);
 
         // Contar total para paginación
         let countQuery = `
-      SELECT COUNT(*) as total
-      FROM categorias c
-    `;
+            SELECT COUNT(DISTINCT c.categoria_id) as total
+            FROM categorias c
+            LEFT JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
+            LEFT JOIN productos p ON c.categoria_id = p.categoria_id
+        `;
 
         const countWhereConditions = [];
         const countParams = [];
 
+        // CORREGIR: 'activa' en lugar de 'activo'
         if (only_active) {
-            countWhereConditions.push('c.activo = TRUE');
+            countWhereConditions.push('c.activa = TRUE');
         }
 
         if (search) {
             countWhereConditions.push(`(
-        c.nombre ILIKE $${countParams.length + 1} OR 
-        c.descripcion ILIKE $${countParams.length + 1}
-      )`);
+                c.nombre ILIKE $${countParams.length + 1} OR 
+                c.descripcion ILIKE $${countParams.length + 1}
+            )`);
             countParams.push(`%${search}%`);
         }
 
@@ -86,12 +103,24 @@ class CategoryService {
             countParams.push(nivel);
         }
 
+        if (categoria_padre_id !== undefined && categoria_padre_id !== null) {
+            if (categoria_padre_id === 'null' || categoria_padre_id === null) {
+                countWhereConditions.push('c.categoria_padre_id IS NULL');
+            } else {
+                countWhereConditions.push(`c.categoria_padre_id = $${countParams.length + 1}`);
+                countParams.push(categoria_padre_id);
+            }
+        }
+
         if (countWhereConditions.length > 0) {
             countQuery += ' WHERE ' + countWhereConditions.join(' AND ');
         }
 
         const client = await pool.connect();
         try {
+            console.log('📋 Query:', query);
+            console.log('📋 Query params:', queryParams);
+            
             const result = await client.query(query, queryParams);
             const countResult = await client.query(countQuery, countParams);
 
@@ -109,6 +138,24 @@ class CategoryService {
         }
     }
 
+    // Método auxiliar para validar campos de ordenamiento
+    getValidSortField(sort_by) {
+        const validFields = [
+            'nombre', 'fecha_creacion', 'nivel', 'categoria_id',
+            'categoria_padre_nombre', 'total_productos'
+        ];
+        
+        if (sort_by === 'total_productos') {
+            return 'COUNT(p.producto_id)';
+        } else if (sort_by === 'categoria_padre_nombre') {
+            return 'cp.nombre';
+        } else if (validFields.includes(sort_by)) {
+            return `c.${sort_by}`;
+        }
+        
+        return 'c.nombre'; // Valor por defecto
+    }
+
     // Obtener categorías con productos incluidos
     async getCategoriesWithProducts(filters = {}, options = {}) {
         const categories = await this.getCategories(filters, options);
@@ -122,54 +169,37 @@ class CategoryService {
         return categories;
     }
 
-    // Obtener árbol de categorías
+    // Obtener árbol de categorías - VERSIÓN SIMPLIFICADA
     async getCategoryTree(options = {}) {
         const { only_active = true } = options;
 
+        // Consulta más simple sin usar columnas que no existen
         let query = `
-      WITH RECURSIVE category_tree AS (
-        SELECT 
-          c.*,
-          ARRAY[]::INTEGER[] as path_ids,
-          ARRAY[]::VARCHAR[] as path_names
-        FROM categorias c
-        WHERE c.categoria_padre_id IS NULL
-        ${only_active ? 'AND c.activo = TRUE' : ''}
-        
-        UNION ALL
-        
-        SELECT 
-          c.*,
-          ct.path_ids || c.categoria_padre_id,
-          ct.path_names || cp.nombre
-        FROM categorias c
-        INNER JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
-        INNER JOIN category_tree ct ON c.categoria_padre_id = ct.categoria_id
-        ${only_active ? 'WHERE c.activo = TRUE' : ''}
-      )
-      SELECT 
-        ct.*,
-        COUNT(p.producto_id) as total_productos,
-        (
-          SELECT COUNT(*)
-          FROM categorias sc
-          WHERE sc.categoria_padre_id = ct.categoria_id
-          ${only_active ? 'AND sc.activo = TRUE' : ''}
-        ) as total_subcategorias,
-        COALESCE(ARRAY_LENGTH(ct.path_ids, 1), 0) + 1 as depth
-      FROM category_tree ct
-      LEFT JOIN productos p ON ct.categoria_id = p.categoria_id
-      GROUP BY ct.categoria_id, ct.path_ids, ct.path_names
-      ORDER BY ct.path_ids, ct.orden, ct.nombre
-    `;
+            SELECT 
+                c.categoria_id,
+                c.nombre,
+                c.descripcion,
+                c.categoria_padre_id,
+                c.nivel,
+                c.activa,
+                c.fecha_creacion,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM productos 
+                    WHERE productos.categoria_id = c.categoria_id
+                ), 0) as total_productos
+            FROM categorias c
+            ${only_active ? 'WHERE c.activa = TRUE' : ''}
+            ORDER BY c.nivel, c.nombre
+        `;
 
         const result = await pool.query(query);
-
-        // Convertir a estructura jerárquica
+        
+        // Construir árbol manualmente
         return this.buildCategoryTree(result.rows);
     }
 
-    // Construir árbol jerárquico
+    // Construir árbol jerárquico - VERSIÓN CORREGIDA
     buildCategoryTree(categories) {
         const categoryMap = {};
         const rootCategories = [];
@@ -192,22 +222,25 @@ class CategoryService {
         return rootCategories;
     }
 
-    // Obtener categoría por ID
+    // Obtener categoría por ID - VERSIÓN CORREGIDA
     async getCategoryById(id, options = {}) {
         const { include_products = false, include_parent = false } = options;
 
+        // CORREGIR: Quitar 'slug' ya que no existe
         let query = `
-      SELECT 
-        c.*,
-        cp.nombre as categoria_padre_nombre,
-        cp.slug as categoria_padre_slug,
-        COUNT(p.producto_id) as total_productos
-      FROM categorias c
-      LEFT JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
-      LEFT JOIN productos p ON c.categoria_id = p.categoria_id
-      WHERE c.categoria_id = $1
-      GROUP BY c.categoria_id, cp.categoria_id
-    `;
+            SELECT 
+                c.*,
+                cp.nombre as categoria_padre_nombre,
+                COALESCE((
+                    SELECT COUNT(*) 
+                    FROM productos 
+                    WHERE productos.categoria_id = c.categoria_id
+                ), 0) as total_productos
+            FROM categorias c
+            LEFT JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
+            WHERE c.categoria_id = $1
+            GROUP BY c.categoria_id, cp.categoria_id
+        `;
 
         const result = await pool.query(query, [id]);
 
@@ -223,9 +256,9 @@ class CategoryService {
             category.productos = products.data;
         }
 
-        // Incluir subcategorías
+        // Incluir subcategorías (CORREGIR: no ordenar por 'orden')
         const subcategories = await pool.query(
-            `SELECT * FROM categorias WHERE categoria_padre_id = $1 AND activo = TRUE ORDER BY orden, nombre`,
+            `SELECT * FROM categorias WHERE categoria_padre_id = $1 AND activa = TRUE ORDER BY nombre`,
             [id]
         );
         category.subcategorias = subcategories.rows;
@@ -233,43 +266,11 @@ class CategoryService {
         return category;
     }
 
-    // Obtener categoría por slug
-    async getCategoryBySlug(slug, options = {}) {
-        const { include_products = false } = options;
-
-        let query = `
-      SELECT 
-        c.*,
-        cp.nombre as categoria_padre_nombre,
-        cp.slug as categoria_padre_slug
-      FROM categorias c
-      LEFT JOIN categorias cp ON c.categoria_padre_id = cp.categoria_id
-      WHERE c.slug = $1 AND c.activo = TRUE
-    `;
-
-        const result = await pool.query(query, [slug]);
-
-        if (result.rows.length === 0) {
-            return null;
-        }
-
-        const category = result.rows[0];
-
-        // Incluir productos si se solicita
-        if (include_products) {
-            const products = await this.getCategoryProducts(category.categoria_id, {}, { limit: 50, page: 1 });
-            category.productos = products.data;
-        }
-
-        // Incluir subcategorías
-        const subcategories = await pool.query(
-            `SELECT * FROM categorias WHERE categoria_padre_id = $1 AND activo = TRUE ORDER BY orden, nombre`,
-            [category.categoria_id]
-        );
-        category.subcategorias = subcategories.rows;
-
-        return category;
-    }
+    // ELIMINAR ESTE MÉTODO YA QUE 'slug' NO EXISTE
+    // async getCategoryBySlug(slug, options = {}) {
+    //     // Este método no puede funcionar porque no hay columna 'slug'
+    //     throw new Error("La columna 'slug' no existe en la tabla categorias");
+    // }
 
     // Obtener productos de una categoría
     async getCategoryProducts(categoryId, filters = {}, options = {}) {
@@ -289,25 +290,25 @@ class CategoryService {
         const offset = (page - 1) * limit;
 
         let query = `
-      SELECT 
-        p.*,
-        m.nombre as marca_nombre,
-        (
-          SELECT JSON_AGG(json_build_object(
-            'variante_id', v.variante_id,
-            'talla', v.talla,
-            'color_nombre', v.color_nombre,
-            'color_hex', v.color_hex,
-            'stock_actual', v.stock_actual,
-            'codigo_barras', v.codigo_barras
-          ))
-          FROM variantes_producto v
-          WHERE v.producto_id = p.producto_id
-        ) as variantes
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca_id = m.marca_id
-      WHERE p.categoria_id = $1
-    `;
+            SELECT 
+                p.*,
+                m.nombre as marca_nombre,
+                (
+                    SELECT JSON_AGG(json_build_object(
+                        'variante_id', v.variante_id,
+                        'talla', v.talla,
+                        'color_nombre', v.color_nombre,
+                        'color_hex', v.color_hex,
+                        'stock_actual', v.stock_actual,
+                        'codigo_barras', v.codigo_barras
+                    ))
+                    FROM variantes_producto v
+                    WHERE v.producto_id = p.producto_id
+                ) as variantes
+            FROM productos p
+            LEFT JOIN marcas m ON p.marca_id = m.marca_id
+            WHERE p.categoria_id = $1
+        `;
 
         const queryParams = [categoryId];
         let paramCount = 1;
@@ -336,10 +337,10 @@ class CategoryService {
 
         // Contar total
         let countQuery = `
-      SELECT COUNT(*) as total
-      FROM productos p
-      WHERE p.categoria_id = $1
-    `;
+            SELECT COUNT(*) as total
+            FROM productos p
+            WHERE p.categoria_id = $1
+        `;
 
         const countParams = [categoryId];
 
@@ -377,57 +378,53 @@ class CategoryService {
         }
     }
 
-    // Crear nueva categoría
+    // Crear nueva categoría - VERSIÓN CORREGIDA
     async createCategory(categoryData) {
         const {
             nombre,
             descripcion,
             categoria_padre_id,
-            nivel,
-            slug,
-            imagen_url,
-            orden = 0,
-            activo = true,
-            meta_title,
-            meta_description,
-            meta_keywords
+            nivel = 1,
+            activa = true
         } = categoryData;
 
+        // Solo usar columnas que existen
         const query = `
-      INSERT INTO categorias (
-        nombre, descripcion, categoria_padre_id, nivel, slug, 
-        imagen_url, orden, activo, meta_title, meta_description, meta_keywords
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING *
-    `;
+            INSERT INTO categorias (
+                nombre, 
+                descripcion, 
+                categoria_padre_id, 
+                nivel, 
+                activa
+            ) VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+        `;
 
         const values = [
             nombre,
-            descripcion,
+            descripcion || null,
             categoria_padre_id || null,
             nivel,
-            slug,
-            imagen_url,
-            orden,
-            activo,
-            meta_title,
-            meta_description,
-            meta_keywords
+            activa
         ];
 
         const result = await pool.query(query, values);
         return result.rows[0];
     }
 
-    // Actualizar categoría
+    // Actualizar categoría - VERSIÓN CORREGIDA
     async updateCategory(id, updateData) {
         const fields = [];
         const values = [];
         let paramCount = 1;
 
+        // Solo campos que existen
         const allowedFields = [
-            'nombre', 'descripcion', 'categoria_padre_id', 'nivel', 'slug',
-            'imagen_url', 'orden', 'activo', 'meta_title', 'meta_description', 'meta_keywords'
+            'nombre', 
+            'descripcion', 
+            'categoria_padre_id', 
+            'nivel', 
+            'activa'
         ];
 
         allowedFields.forEach(field => {
@@ -445,11 +442,11 @@ class CategoryService {
         values.push(id);
 
         const query = `
-      UPDATE categorias
-      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
-      WHERE categoria_id = $${paramCount}
-      RETURNING *
-    `;
+            UPDATE categorias
+            SET ${fields.join(', ')}
+            WHERE categoria_id = $${paramCount}
+            RETURNING *
+        `;
 
         const result = await pool.query(query, values);
         return result.rows[0];
@@ -475,31 +472,24 @@ class CategoryService {
         return parseInt(result.rows[0].count);
     }
 
-    // Actualizar estado de categoría
-    async updateCategoryStatus(id, activo) {
+    // Actualizar estado de categoría - VERSIÓN CORREGIDA
+    async updateCategoryStatus(id, activa) {
         const query = `
-      UPDATE categorias 
-      SET activo = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE categoria_id = $2
-      RETURNING *
-    `;
-        const result = await pool.query(query, [activo, id]);
+            UPDATE categorias 
+            SET activa = $1
+            WHERE categoria_id = $2
+            RETURNING *
+        `;
+        const result = await pool.query(query, [activa, id]);
         return result.rows[0];
     }
 
-    // Actualizar orden de categoría
-    async updateCategoryOrder(id, orden) {
-        const query = `
-      UPDATE categorias 
-      SET orden = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE categoria_id = $2
-      RETURNING *
-    `;
-        const result = await pool.query(query, [orden, id]);
-        return result.rows[0];
-    }
+    // ELIMINAR ESTE MÉTODO YA QUE 'orden' NO EXISTE
+    // async updateCategoryOrder(id, orden) {
+    //     throw new Error("La columna 'orden' no existe en la tabla categorias");
+    // }
 
-    // Mover categoría entre padres
+    // Mover categoría entre padres - VERSIÓN CORREGIDA
     async moveCategory(id, nuevo_padre_id) {
         // Obtener nivel del nuevo padre
         let newLevel = 1;
@@ -512,11 +502,11 @@ class CategoryService {
         }
 
         const query = `
-      UPDATE categorias 
-      SET categoria_padre_id = $1, nivel = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE categoria_id = $3
-      RETURNING *
-    `;
+            UPDATE categorias 
+            SET categoria_padre_id = $1, nivel = $2
+            WHERE categoria_id = $3
+            RETURNING *
+        `;
         const result = await pool.query(query, [nuevo_padre_id || null, newLevel, id]);
         return result.rows[0];
     }
@@ -524,21 +514,21 @@ class CategoryService {
     // Obtener estadísticas de categorías
     async getCategoryStats() {
         const query = `
-      SELECT 
-        COUNT(*) as total_categorias,
-        COUNT(CASE WHEN activo = TRUE THEN 1 END) as categorias_activas,
-        COUNT(CASE WHEN activo = FALSE THEN 1 END) as categorias_inactivas,
-        COUNT(DISTINCT nivel) as niveles_diferentes,
-        COALESCE(AVG(total_productos), 0) as promedio_productos_por_categoria
-      FROM (
-        SELECT 
-          c.*,
-          COUNT(p.producto_id) as total_productos
-        FROM categorias c
-        LEFT JOIN productos p ON c.categoria_id = p.categoria_id
-        GROUP BY c.categoria_id
-      ) as categorias_con_productos
-    `;
+            SELECT 
+                COUNT(*) as total_categorias,
+                COUNT(CASE WHEN activa = TRUE THEN 1 END) as categorias_activas,
+                COUNT(CASE WHEN activa = FALSE THEN 1 END) as categorias_inactivas,
+                COUNT(DISTINCT nivel) as niveles_diferentes,
+                COALESCE(AVG(total_productos), 0) as promedio_productos_por_categoria
+            FROM (
+                SELECT 
+                    c.*,
+                    COUNT(p.producto_id) as total_productos
+                FROM categorias c
+                LEFT JOIN productos p ON c.categoria_id = p.categoria_id
+                GROUP BY c.categoria_id
+            ) as categorias_con_productos
+        `;
 
         const result = await pool.query(query);
         return result.rows[0];
@@ -547,59 +537,44 @@ class CategoryService {
     // Obtener estadísticas detalladas de una categoría
     async getCategoryDetailStats(id) {
         const query = `
-      SELECT 
-        c.nombre,
-        c.categoria_id,
-        COUNT(p.producto_id) as total_productos,
-        COALESCE(SUM(vp.stock_actual), 0) as total_stock,
-        COALESCE(MIN(p.precio_venta), 0) as precio_minimo,
-        COALESCE(MAX(p.precio_venta), 0) as precio_maximo,
-        COALESCE(AVG(p.precio_venta), 0) as precio_promedio,
-        (
-          SELECT COUNT(*)
-          FROM categorias sc
-          WHERE sc.categoria_padre_id = c.categoria_id
-          AND sc.activo = TRUE
-        ) as total_subcategorias,
-        (
-          SELECT JSON_AGG(json_build_object(
-            'marca_id', m.marca_id,
-            'marca_nombre', m.nombre,
-            'total_productos', subq.total
-          ))
-          FROM (
-            SELECT p.marca_id, COUNT(*) as total
-            FROM productos p
-            WHERE p.categoria_id = c.categoria_id
-            GROUP BY p.marca_id
-          ) subq
-          JOIN marcas m ON subq.marca_id = m.marca_id
-        ) as productos_por_marca
-      FROM categorias c
-      LEFT JOIN productos p ON c.categoria_id = p.categoria_id
-      LEFT JOIN variantes_producto vp ON p.producto_id = vp.producto_id
-      WHERE c.categoria_id = $1
-      GROUP BY c.categoria_id, c.nombre
-    `;
+            SELECT 
+                c.nombre,
+                c.categoria_id,
+                COUNT(p.producto_id) as total_productos,
+                COALESCE(SUM(vp.stock_actual), 0) as total_stock,
+                COALESCE(MIN(p.precio_venta), 0) as precio_minimo,
+                COALESCE(MAX(p.precio_venta), 0) as precio_maximo,
+                COALESCE(AVG(p.precio_venta), 0) as precio_promedio,
+                (
+                    SELECT COUNT(*)
+                    FROM categorias sc
+                    WHERE sc.categoria_padre_id = c.categoria_id
+                    AND sc.activa = TRUE
+                ) as total_subcategorias
+            FROM categorias c
+            LEFT JOIN productos p ON c.categoria_id = p.categoria_id
+            LEFT JOIN variantes_producto vp ON p.producto_id = vp.producto_id
+            WHERE c.categoria_id = $1
+            GROUP BY c.categoria_id, c.nombre
+        `;
 
         const result = await pool.query(query, [id]);
         return result.rows[0];
     }
 
-    // Buscar sugerencias de categorías
+    // Buscar sugerencias de categorías - VERSIÓN CORREGIDA
     async searchCategorySuggestions(query, limit = 10) {
         const searchQuery = `
-      SELECT 
-        categoria_id,
-        nombre,
-        slug,
-        descripcion
-      FROM categorias
-      WHERE nombre ILIKE $1
-        AND activo = TRUE
-      ORDER BY nombre
-      LIMIT $2
-    `;
+            SELECT 
+                categoria_id,
+                nombre,
+                descripcion
+            FROM categorias
+            WHERE nombre ILIKE $1
+                AND activa = TRUE
+            ORDER BY nombre
+            LIMIT $2
+        `;
 
         const result = await pool.query(searchQuery, [`%${query}%`, limit]);
         return result.rows;

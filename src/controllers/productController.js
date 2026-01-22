@@ -42,7 +42,7 @@ class ProductController {
         //     LEFT JOIN marcas m ON p.marca_id = m.marca_id
         //     WHERE p.activo = true
         //   `;
-       let queryStr = `
+        let queryStr = `
 SELECT 
   p.*, 
   c.nombre AS categoria_nombre,
@@ -232,7 +232,7 @@ WHERE p.activo = true
         const productsWithVariants = await Promise.all(
             result.rows.map(async (product) => {
                 const variantsResult = await query(
-            `SELECT vp.*, 
+                    `SELECT vp.*, 
             COALESCE(SUM(i.cantidad), 0) AS stock_total_almacenes
             FROM variantes_producto vp
             LEFT JOIN inventario i 
@@ -241,8 +241,8 @@ WHERE p.activo = true
             AND vp.activo = true
             GROUP BY vp.variante_id
             ORDER BY vp.talla, vp.color_nombre`,
-            [product.producto_id]
-        );
+                    [product.producto_id]
+                );
 
                 return {
                     ...product,
@@ -535,8 +535,8 @@ WHERE 1=1
         const { id } = req.params;
 
         // Query principal con imágenes y stock total
-          const result = await query(
-        `
+        const result = await query(
+            `
         SELECT 
             p.*, 
             c.nombre AS categoria_nombre,
@@ -544,6 +544,7 @@ WHERE 1=1
             COALESCE((
                 SELECT json_agg(
                     json_build_object(
+                        'imagen_id', ip.imagen_id,
                         'url', ip.url_imagen,
                         'es_principal', ip.es_principal,
                         'orden', ip.orden
@@ -575,8 +576,8 @@ WHERE 1=1
         WHERE p.producto_id = $1
           AND p.activo = true
         `,
-        [id]
-    );
+            [id]
+        );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
@@ -652,8 +653,6 @@ WHERE 1=1
             }
         });
     });
-
-
 
     // Crear nuevo producto
     static createProduct = [
@@ -735,7 +734,7 @@ WHERE 1=1
             const updateData = { ...req.body }; // clonamos para no mutar req.body
 
             // Extraer motivo_cambio y eliminar del objeto updateData
-            const motivoCambio = updateData.motivo_cambio || 'Ajuste de precio';
+            const motivoCambio = updateData.motivo_cambio || 'Otro';
             delete updateData.motivo_cambio;
 
             // Verificar si el producto existe
@@ -969,7 +968,7 @@ WHERE 1=1
             data: result.rows[0]
         })
     })
-    // Crear variante de producto
+
     // Crear variante de producto
     static createVariant = asyncHandler(async (req, res) => {
         const productoId = Number(req.params.producto_id);
@@ -1306,6 +1305,730 @@ WHERE 1=1
             data: result.rows[0]
         });
     });
+
+
+    // Obtener variante por ID
+    // Obtener variante por ID - VERSIÓN MÍNIMA
+    static getVariantById = asyncHandler(async (req, res) => {
+        const { producto_id, variante_id } = req.params;
+
+        console.log('🔍 getVariantById:', { producto_id, variante_id });
+
+        // Query directa y simple
+        const result = await query(
+            `SELECT vp.*, p.nombre as producto_nombre, p.sku as producto_sku
+         FROM variantes_producto vp
+         LEFT JOIN productos p ON vp.producto_id = p.producto_id
+         WHERE vp.variante_id = $1 AND vp.producto_id = $2`,
+            [variante_id, producto_id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Variante no encontrada'
+            });
+        }
+
+        const variant = result.rows[0];
+
+        // Verificar si realmente pertenece al producto indicado
+        if (variant.producto_id != producto_id) {
+            return res.status(404).json({
+                success: false,
+                message: 'La variante no pertenece a este producto'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: variant
+        });
+    });
+
+    // Actualizar variante
+    // Actualizar variante - VERSIÓN CORREGIDA
+    static updateVariant = [
+        validate(validationSchemas.updateVariant),
+        asyncHandler(async (req, res) => {
+            const { producto_id, variante_id } = req.params;
+            const updateData = req.body;
+
+            console.log('🔍 Actualizando variante:', { producto_id, variante_id, updateData });
+
+            const client = await getClient();
+
+            try {
+                await client.query('BEGIN');
+
+                // 1. Verificar que la variante exista
+                const variantCheck = await client.query(
+                    `SELECT * FROM variantes_producto 
+                WHERE variante_id = $1 
+                    AND producto_id = $2`,
+                    [variante_id, producto_id]
+                );
+
+                if (variantCheck.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Variante no encontrada'
+                    });
+                }
+
+                const oldVariant = variantCheck.rows[0];
+
+                // 2. Verificar duplicados (solo si se cambia talla o color)
+                if (updateData.talla || updateData.color_nombre) {
+                    const newTalla = updateData.talla || oldVariant.talla;
+                    const newColor = updateData.color_nombre || oldVariant.color_nombre;
+
+                    const duplicateCheck = await client.query(
+                        `SELECT variante_id 
+                    FROM variantes_producto 
+                    WHERE producto_id = $1 
+                        AND variante_id != $2
+                        AND talla = $3 
+                        AND LOWER(color_nombre) = LOWER($4)`,
+                        [producto_id, variante_id, newTalla, newColor]
+                    );
+
+                    if (duplicateCheck.rows.length > 0) {
+                        await client.query('ROLLBACK');
+                        return res.status(409).json({
+                            success: false,
+                            message: 'Ya existe una variante con esta combinación de talla y color'
+                        });
+                    }
+                }
+
+                // 3. Verificar duplicado de código de barras
+                if (updateData.codigo_barras && updateData.codigo_barras !== oldVariant.codigo_barras) {
+                    const barcodeCheck = await client.query(
+                        `SELECT variante_id 
+                    FROM variantes_producto 
+                    WHERE codigo_barras = $1 
+                        AND variante_id != $2`,
+                        [updateData.codigo_barras, variante_id]
+                    );
+
+                    if (barcodeCheck.rows.length > 0) {
+                        await client.query('ROLLBACK');
+                        return res.status(409).json({
+                            success: false,
+                            message: 'El código de barras ya está en uso'
+                        });
+                    }
+                }
+
+                // 4. Construir query de actualización
+                const fields = [];
+                const values = [];
+                let paramCount = 1;
+
+                // Campos permitidos para actualizar
+                const allowedFields = [
+                    'talla', 'color_nombre', 'color_hex', 'codigo_barras',
+                    'ubicacion_almacen', 'activo'
+                ];
+
+                allowedFields.forEach(field => {
+                    if (updateData[field] !== undefined) {
+                        fields.push(`${field} = $${paramCount}`);
+                        values.push(updateData[field]);
+                        paramCount++;
+                    }
+                });
+
+                // Agregar campos adicionales si existen
+                const additionalFields = ['costo_extra', 'precio_venta_variante', 'disponible_online'];
+                additionalFields.forEach(field => {
+                    if (updateData[field] !== undefined) {
+                        fields.push(`${field} = $${paramCount}`);
+                        values.push(updateData[field]);
+                        paramCount++;
+                    }
+                });
+
+                if (fields.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        success: false,
+                        message: 'No hay datos para actualizar'
+                    });
+                }
+
+                // Agregar parámetros de WHERE
+                values.push(variante_id);
+                values.push(producto_id);
+
+                const queryStr = `
+                UPDATE variantes_producto 
+                SET ${fields.join(', ')}
+                WHERE variante_id = $${paramCount}
+                    AND producto_id = $${paramCount + 1}
+                RETURNING *
+            `;
+
+                console.log('📝 Query de actualización:', queryStr);
+                console.log('📝 Valores:', values);
+
+                // 5. Ejecutar actualización
+                const result = await client.query(queryStr, values);
+                const updatedVariant = result.rows[0];
+
+                // 6. Registrar cambio en auditoría (con manejo seguro de req.user)
+                try {
+                    // Obtener empleado_id de forma segura
+                    let empleadoId = null;
+
+                    // Opción 1: Si tienes middleware de autenticación
+                    if (req.user && req.user.empleado_id) {
+                        empleadoId = req.user.empleado_id;
+                    }
+                    // Opción 2: Si tienes header de usuario
+                    else if (req.headers['x-user-id']) {
+                        empleadoId = req.headers['x-user-id'];
+                    }
+                    // Opción 3: Usar un usuario por defecto (sistema)
+                    else {
+                        empleadoId = 1; // ID de usuario sistema/admin por defecto
+                    }
+
+                    await client.query(
+                        `INSERT INTO auditorias (
+                        tabla_afectada, accion, id_registro,
+                        datos_anteriores, datos_nuevos, realizado_por
+                    ) VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [
+                            'variantes_producto',
+                            'UPDATE',
+                            variante_id,
+                            JSON.stringify(oldVariant),
+                            JSON.stringify(updatedVariant),
+                            empleadoId
+                        ]
+                    );
+                } catch (auditError) {
+                    console.warn('⚠️ Error en auditoría (continuando):', auditError.message);
+                    // No revertir por error en auditoría
+                }
+
+                await client.query('COMMIT');
+
+                console.log('✅ Variante actualizada exitosamente');
+
+                res.json({
+                    success: true,
+                    message: 'Variante actualizada exitosamente',
+                    data: updatedVariant
+                });
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                console.error('❌ Error en updateVariant:', error);
+                throw error;
+            } finally {
+                client.release();
+            }
+        })
+    ];
+    // Eliminar variante (soft delete)
+    static deleteVariant = asyncHandler(async (req, res) => {
+        const { producto_id, variante_id } = req.params;
+        const { motivo } = req.body;
+
+        const client = await getClient();
+
+        try {
+            await client.query('BEGIN');
+
+            // 1. Verificar que la variante exista
+            const variantCheck = await client.query(
+                `SELECT * FROM variantes_producto 
+            WHERE variante_id = $1 
+                AND producto_id = $2 
+                AND activo = true`,
+                [variante_id, producto_id]
+            );
+
+            if (variantCheck.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({
+                    success: false,
+                    message: 'Variante no encontrada'
+                });
+            }
+
+            const variant = variantCheck.rows[0];
+
+            // 2. Verificar si tiene stock
+            if (variant.stock_actual > 0 || variant.stock_reservado > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    message: 'No se puede eliminar una variante con stock disponible'
+                });
+            }
+
+            // 3. Verificar si tiene ventas pendientes o recientes
+            const salesCheck = await client.query(
+                `SELECT COUNT(*) as ventas_recientes
+            FROM detalles_venta dv
+            JOIN ventas v ON dv.venta_id = v.venta_id
+            WHERE dv.variante_id = $1
+                AND v.fecha_venta >= CURRENT_DATE - INTERVAL '90 days'`,
+                [variante_id]
+            );
+
+            const ventasRecientes = parseInt(salesCheck.rows[0].ventas_recientes);
+
+            // 4. Realizar eliminación (soft delete)
+            await client.query(
+                `UPDATE variantes_producto 
+            SET activo = false, 
+                disponible_online = false,
+                fecha_discontinuado = CURRENT_DATE
+            WHERE variante_id = $1`,
+                [variante_id]
+            );
+
+            // 5. Registrar en auditoría
+            await client.query(
+                `INSERT INTO auditorias (
+                tabla_afectada, accion, id_registro,
+                datos_anteriores, realizado_por, motivo
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
+                [
+                    'variantes_producto',
+                    'DELETE',
+                    variante_id,
+                    JSON.stringify(variant),
+                    req.user.empleado_id || null,
+                    motivo || 'Eliminación manual'
+                ]
+            );
+
+            await client.query('COMMIT');
+
+            res.json({
+                success: true,
+                message: ventasRecientes > 0
+                    ? 'Variante desactivada (tiene historial de ventas)'
+                    : 'Variante eliminada exitosamente',
+                data: {
+                    variante_id,
+                    ventas_recientes
+                }
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    });
+
+    // Transferir stock entre almacenes
+    static transferVariantStock = asyncHandler(async (req, res) => {
+        const { producto_id, variante_id } = req.params;
+        const {
+            almacen_origen_id,
+            almacen_destino_id,
+            cantidad,
+            motivo,
+            empleado_id
+        } = req.body;
+
+        const client = await getClient();
+
+        try {
+            await client.query('BEGIN');
+
+            // 1. Validar que la variante existe
+            const variantCheck = await client.query(
+                `SELECT * FROM variantes_producto 
+            WHERE variante_id = $1 
+                AND producto_id = $2 
+                AND activo = true`,
+                [variante_id, producto_id]
+            );
+
+            if (variantCheck.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({
+                    success: false,
+                    message: 'Variante no encontrada'
+                });
+            }
+
+            // 2. Verificar stock en almacén origen
+            const originStock = await client.query(
+                `SELECT cantidad FROM inventario 
+            WHERE variante_id = $1 
+                AND almacen_id = $2`,
+                [variante_id, almacen_origen_id]
+            );
+
+            if (originStock.rows.length === 0 || originStock.rows[0].cantidad < cantidad) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    success: false,
+                    message: 'Stock insuficiente en el almacén de origen'
+                });
+            }
+
+            const stockOrigenActual = originStock.rows[0].cantidad;
+
+            // 3. Actualizar almacén origen (restar)
+            await client.query(
+                `UPDATE inventario 
+            SET cantidad = cantidad - $1
+            WHERE variante_id = $2 
+                AND almacen_id = $3`,
+                [cantidad, variante_id, almacen_origen_id]
+            );
+
+            // 4. Actualizar o crear registro en almacén destino (sumar)
+            const destStock = await client.query(
+                `SELECT cantidad FROM inventario 
+            WHERE variante_id = $1 
+                AND almacen_id = $2`,
+                [variante_id, almacen_destino_id]
+            );
+
+            if (destStock.rows.length > 0) {
+                await client.query(
+                    `UPDATE inventario 
+                SET cantidad = cantidad + $1
+                WHERE variante_id = $2 
+                    AND almacen_id = $3`,
+                    [cantidad, variante_id, almacen_destino_id]
+                );
+            } else {
+                await client.query(
+                    `INSERT INTO inventario (variante_id, almacen_id, cantidad)
+                VALUES ($1, $2, $3)`,
+                    [variante_id, almacen_destino_id, cantidad]
+                );
+            }
+
+            // 5. Obtener stock actualizado del destino
+            const destStockUpdated = await client.query(
+                `SELECT cantidad FROM inventario 
+            WHERE variante_id = $1 
+                AND almacen_id = $2`,
+                [variante_id, almacen_destino_id]
+            );
+
+            const stockDestinoActual = destStockUpdated.rows[0]?.cantidad || cantidad;
+
+            // 6. Registrar movimiento de salida (origen)
+            await client.query(
+                `INSERT INTO movimientos_inventario (
+                variante_id, almacen_id, tipo_movimiento,
+                cantidad, cantidad_anterior, cantidad_nueva,
+                referencia_id, tipo_referencia, empleado_id, motivo
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [
+                    variante_id, almacen_origen_id, 'Transferencia',
+                    cantidad, stockOrigenActual, stockOrigenActual - cantidad,
+                    null, 'Transferencia', empleado_id || req.user.empleado_id,
+                    motivo || 'Transferencia a otro almacén'
+                ]
+            );
+
+            // 7. Registrar movimiento de entrada (destino)
+            await client.query(
+                `INSERT INTO movimientos_inventario (
+                variante_id, almacen_id, tipo_movimiento,
+                cantidad, cantidad_anterior, cantidad_nueva,
+                referencia_id, tipo_referencia, empleado_id, motivo
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [
+                    variante_id, almacen_destino_id, 'Entrada',
+                    cantidad, (stockDestinoActual - cantidad), stockDestinoActual,
+                    null, 'Transferencia', empleado_id || req.user.empleado_id,
+                    motivo || 'Transferencia desde otro almacén'
+                ]
+            );
+
+            // 8. Crear registro de transferencia
+            const transferResult = await client.query(
+                `INSERT INTO transferencias_almacen (
+                codigo_transferencia, almacen_origen_id, almacen_destino_id,
+                empleado_id, estado, notas
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *`,
+                [
+                    `TRANS-${Date.now()}-${variante_id}`,
+                    almacen_origen_id, almacen_destino_id,
+                    empleado_id || req.user.empleado_id,
+                    'Recibido',
+                    motivo || 'Transferencia manual'
+                ]
+            );
+
+            const transferencia = transferResult.rows[0];
+
+            // 9. Registrar detalle de transferencia
+            await client.query(
+                `INSERT INTO detalles_transferencia (
+                transferencia_id, variante_id, cantidad,
+                cantidad_enviada, cantidad_recibida
+            ) VALUES ($1, $2, $3, $4, $5)`,
+                [
+                    transferencia.transferencia_id,
+                    variante_id,
+                    cantidad,
+                    cantidad,
+                    cantidad
+                ]
+            );
+
+            await client.query('COMMIT');
+
+            res.json({
+                success: true,
+                message: 'Stock transferido exitosamente',
+                data: {
+                    transferencia_id: transferencia.transferencia_id,
+                    variante_id,
+                    almacen_origen_id,
+                    almacen_destino_id,
+                    cantidad,
+                    stock_origen_final: stockOrigenActual - cantidad,
+                    stock_destino_final: stockDestinoActual
+                }
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    });
+
+
+    // Obtener todas las variantes de un producto
+    static getProductVariants = asyncHandler(async (req, res) => {
+        const { producto_id } = req.params;
+        const {
+            activo, // puede ser 'true', 'false' o undefined
+            sortBy = 'talla',
+            sortOrder = 'asc'
+        } = req.query;
+
+        console.log('🔍 Parámetros recibidos:', {
+            producto_id,
+            activo,
+            sortBy,
+            sortOrder
+        });
+
+        // Construir query base
+        let queryStr = `
+        SELECT 
+            vp.*,
+            COALESCE(SUM(i.cantidad), 0) as stock_total_almacenes
+        FROM variantes_producto vp
+        LEFT JOIN inventario i ON vp.variante_id = i.variante_id
+        WHERE vp.producto_id = $1
+    `;
+
+        const params = [producto_id];
+        let paramCount = 2;
+
+        // Manejar filtro activo
+        if (activo !== undefined) {
+            queryStr += ` AND vp.activo = $${paramCount}`;
+            // Convertir string a booleano
+            params.push(activo === 'true');
+            paramCount++;
+            console.log('✅ Filtro activo aplicado:', activo === 'true');
+        }
+
+        queryStr += ` GROUP BY vp.variante_id`;
+
+        // Ordenamiento
+        const validSortColumns = ['talla', 'color_nombre', 'stock_disponible', 'fecha_ultima_entrada'];
+        const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'talla';
+
+        if (sortColumn === 'stock_disponible') {
+            queryStr += ` ORDER BY stock_disponible ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
+        } else {
+            queryStr += ` ORDER BY vp.${sortColumn} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
+        }
+
+        console.log('📝 Query SQL:', queryStr);
+        console.log('📝 Parámetros:', params);
+
+        try {
+            const result = await query(queryStr, params);
+            console.log('✅ Resultados encontrados:', result.rows.length);
+
+            res.json({
+                success: true,
+                data: result.rows
+            });
+        } catch (error) {
+            console.error('❌ Error en la consulta:', error);
+            throw error;
+        }
+    });
+
+    // Obtener TODAS las variantes (versión corregida)
+    static getAllVariants = asyncHandler(async (req, res) => {
+        console.log('🔍 EJECUTANDO getAllVariants');
+
+        const {
+            page = 1,
+            limit = 50,
+            q = '',
+            producto_id,
+            activo,
+            con_stock,
+            sortBy = 'fecha_ultima_entrada',
+            sortOrder = 'desc'
+        } = req.query;
+
+        console.log('📊 Parámetros recibidos:', {
+            page, limit, q, producto_id, activo, con_stock, sortBy, sortOrder
+        });
+
+        const offset = (page - 1) * limit;
+
+        // QUERY PRINCIPAL - VERSIÓN SIMPLIFICADA
+        let queryStr = `
+        SELECT 
+            vp.*,
+            p.nombre as producto_nombre,
+            p.sku as producto_sku,
+            c.nombre as categoria_nombre,
+            m.nombre as marca_nombre
+        FROM variantes_producto vp
+        INNER JOIN productos p ON vp.producto_id = p.producto_id
+        LEFT JOIN categorias c ON p.categoria_id = c.categoria_id
+        LEFT JOIN marcas m ON p.marca_id = m.marca_id
+        WHERE 1=1
+    `;
+
+        const params = [];
+        let paramCount = 0;
+
+        // Filtro de búsqueda
+        if (q) {
+            paramCount++;
+            params.push(`%${q}%`);
+            queryStr += ` AND (
+            p.nombre ILIKE $${paramCount} 
+            OR p.sku ILIKE $${paramCount}
+            OR vp.talla ILIKE $${paramCount}
+            OR vp.color_nombre ILIKE $${paramCount}
+            OR vp.codigo_barras ILIKE $${paramCount}
+        )`;
+        }
+
+        // Filtro por producto
+        if (producto_id) {
+            paramCount++;
+            params.push(producto_id);
+            queryStr += ` AND vp.producto_id = $${paramCount}`;
+        }
+
+        // Filtro por estado
+        if (activo !== undefined) {
+            paramCount++;
+            params.push(activo === 'true');
+            queryStr += ` AND vp.activo = $${paramCount}`;
+        }
+
+        // Ordenamiento SIMPLIFICADO
+        queryStr += ` ORDER BY vp.fecha_ultima_entrada DESC`;
+
+        // Paginación
+        paramCount++;
+        params.push(limit);
+        queryStr += ` LIMIT $${paramCount}`;
+
+        paramCount++;
+        params.push(offset);
+        queryStr += ` OFFSET $${paramCount}`;
+
+        console.log('📝 Query SQL:', queryStr);
+        console.log('📝 Parámetros:', params);
+
+        try {
+            const result = await query(queryStr, params);
+            console.log('✅ Resultados encontrados:', result.rows.length);
+
+            if (result.rows.length > 0) {
+                console.log('📋 Primer registro:', result.rows[0]);
+            }
+
+            // QUERY COUNT - SIMPLIFICADA
+            let countQuery = `
+            SELECT COUNT(*) as total
+            FROM variantes_producto vp
+            INNER JOIN productos p ON vp.producto_id = p.producto_id
+            WHERE 1=1
+        `;
+
+            const countParams = [];
+            let countParamCount = 0;
+
+            if (q) {
+                countParamCount++;
+                countParams.push(`%${q}%`);
+                countQuery += ` AND (
+                p.nombre ILIKE $${countParamCount} 
+                OR p.sku ILIKE $${countParamCount}
+                OR vp.talla ILIKE $${countParamCount}
+                OR vp.color_nombre ILIKE $${countParamCount}
+                OR vp.codigo_barras ILIKE $${countParamCount}
+            )`;
+            }
+
+            if (producto_id) {
+                countParamCount++;
+                countParams.push(producto_id);
+                countQuery += ` AND vp.producto_id = $${countParamCount}`;
+            }
+
+            if (activo !== undefined) {
+                countParamCount++;
+                countParams.push(activo === 'true');
+                countQuery += ` AND vp.activo = $${countParamCount}`;
+            }
+
+            console.log('📝 Count Query:', countQuery);
+            console.log('📝 Count Params:', countParams);
+
+            const countResult = await query(countQuery, countParams);
+            const total = parseInt(countResult.rows[0].total);
+
+            console.log('📊 Total registros:', total);
+
+            res.json({
+                success: true,
+                data: result.rows,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total,
+                    pages: Math.ceil(total / limit)
+                }
+            });
+
+        } catch (error) {
+            console.error('❌ Error en getAllVariants:', error);
+            throw error;
+        }
+    });
+
 }
 
 export default ProductController;
